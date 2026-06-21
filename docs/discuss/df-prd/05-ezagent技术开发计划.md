@@ -4,6 +4,9 @@
 > 本文做四件事：① 把这个产品在 ezagent 上的**技术架构**画清楚（网页出口/每人一个 agent/外部工具集成/真相源数据）；② 给一张**要链接的 plugin/agent/external_mirror 清单表**（现成/要写/依赖在建）；③ 分阶段开发计划，每阶段验收 = 一条能跑的 e2e；④ 风险与未知（标 unverified）。
 > 全程大白话。引 ezagent 代码带 file 路径（相对 worktree 根 `/home/yaosh/projects/ezagent-biz/.claude/worktrees/ezagent-yao/`）；引外部工具带可核查链接。
 
+> **定位（已拍板，全文据此收口）**：这是一个**内部工具**，同时它是 **ezagent 的第一个产品**——先内部 dogfooding（用它规范 ezagent 团队自己的产品开发流程），跑通后适当时间开放外部。**当前阶段只服务一个真实情境：ezagent 团队自己用这个 workspace 来开发 ezagent 面向各用户群体的真实产品**（需求真实、高频、持续；旧体验=飞书+GitHub+群+脑子，较低，净值为正）。对外的 PMF 测分 / PLG 自助 / 差异化 vs Linear 等动作一律**留到内部跑通后再议**，本文不做。
+> 这套计划要达成的根本目标：**用 ezagent 规范 ezagent 团队自己的产品开发，让价值闭环从根源就被跟踪**（从战略/定位出发→痛点→体验→功能→开发→运营，每一步都挂在导图上、有人认领、有产物），且**每一个开发都有配合的产品和运营跟进**（开发/产品/运营三位一体耦合，不是开发完才补）。所以里程碑不是"造完一套完整工具"，而是**先让 ezagent 团队能用它跑通开发一个最小的 ezagent 产品功能**，再逐步加厚。
+
 ---
 
 ## 〇 · 一句话技术定位
@@ -171,24 +174,24 @@
 
 ## 第三部分 · 分阶段开发计划
 
-> 里程碑：单人 agent + 导图出口 → 节点认领 + 产物挂载 → 工具集成 → 闭环看板。每阶段验收 = 一条能跑的 e2e（本地隔离 E2E recipe 见 `.claude/skills/ezagent-socialware/references/local-e2e-recipe.md`，工具链 mise OTP27/1.18，命令前缀 `mise exec --`，`docs/discuss/intro/09-如何在ezagent上搭建新app.md`）。
+> **里程碑主线（据锁死定位）**：不是"先把工具造全再用"，而是**先让 ezagent 团队能用它跑通开发一个最小的 ezagent 产品功能**——阶段 1 先让一个最小可用形态承载一次真实的 ezagent 功能开发（哪怕只覆盖"战略→功能→开发"几个节点），并在这 2 周内**实测对齐/返工成本有没有下降**（价值闸门），降了再加厚。技术里程碑顺序仍是：单人 agent + 导图出口 → 节点认领 + 产物挂载 → 工具集成 → 闭环看板，但每一阶段都要回答"它让 ezagent 团队多跑通了哪一段真实开发"。每阶段验收 = 一条能跑的 e2e（本地隔离 E2E recipe 见 `.claude/skills/ezagent-socialware/references/local-e2e-recipe.md`，工具链 mise OTP27/1.18，命令前缀 `mise exec --`，`docs/discuss/intro/09-如何在ezagent上搭建新app.md`）。
 
 ### 阶段 0 · 脚手架与工具链（前置，0.5 周）
 
 - **做什么**：起 mindmap domain app 空壳（`apps/ezagent_domain_mindmap/`，`use Ezagent.Plugin`，声明回调留空）；客户端 SPA 一次性 build（`cd apps/ezagent_web/assets && pnpm install` + `mix assets.build`）；隔离 home + 库初始化（`mix ezagent.home.init` / `ecto.create` / `ecto.migrate`）。
 - **e2e 验收**：`mix test` 全绿（新 app 不破坏既有测试）；服务能起、`/socialware/chat?session_uri=<占位>` 返 200（SPA 已 build 不是空白）。
 
-### 阶段 1 · 单人 agent + 导图出口 + 核心赌注价值验证（里程碑 1，~2 周）
+### 阶段 1 · 让 ezagent 团队用它跑通一个最小开发 + 核心赌注价值验证（里程碑 1，~2 周）
 
-对应功能 4（网页出口骨架）+ 功能 3（agent 雏形）。先把"出口能开 + 一个 agent 能说话"跑通，**节点模型先用最小桩**（一棵硬编码静态树）。
+对应功能 4（网页出口骨架）+ 功能 3（agent 雏形）。先把"出口能开 + 一个 agent 能说话"跑通，**节点模型先用最小桩**（一棵硬编码静态树），目标是**让 ezagent 团队真的用这个最小形态去推进一次真实的 ezagent 产品功能开发**（把这次开发的几个关键节点——定位/功能/开发——挂上去、有人认领、产物挂回），而不是空跑一个 demo。
 
-**这个阶段加一道价值闸门，不只是功能闸门。** 整套设计成败系于一个假设：**"每人一个长期 agent 能真正降低对齐成本（对齐时长下降），而不是制造噪音"**（俞军评审定为"最高不确定性、案例支撑最弱、整个差异化系于此"的核心赌注，`_yj-review.md` §五维-决策质量）。这个假设最该先证伪，所以**前置到阶段 1 实测，而不是等 9.5 周造完再发现它不成立**——把核心风险从 9.5 周压到 2 周。
+**这个阶段的价值闸门 = 2 周实测"开发 ezagent 功能时对齐/返工成本下降"，不只是功能闸门。** 整套设计成败系于一个假设：**"用这套 workspace（导图挂钩 + 每人一个长期 agent）开发 ezagent 功能时，对齐成本和返工真的下降，而不是多一层负担 / agent 制造噪音"**（俞军评审定为"最高不确定性、案例支撑最弱、整个差异化系于此"的核心赌注，`_yj-review.md` §五维-决策质量）。这个假设最该先证伪，所以**前置到阶段 1 实测，而不是等 10 周造完再发现它不成立**——把核心风险从 10 周压到 2 周。
 
 - **做什么**：
   1. 建一个 `public_view: true` 会话模板（`persist_version_as_system/2`，09 篇路 B ①），seed 起一个活会话（路 B ②③）。
   2. 给一个测试成员 spawn 一个 curl flavor 个人 agent（`entity://<ws>/agent/alice`），加进会话。
   3. 编排器把一棵**静态占位树**（写死的"团队状态"）经 `Surface.put_version` + `approve` 投到客户面。
-  4. **价值验证小灶**：用我们自己 3-5 个人，把真实的"问进度/对齐"动作搬到这个最小 flavor 上跑 2 周，每天记一次对齐耗时（同步会议 + 刷群问进度的分钟数）。
+  4. **价值验证小灶**：用 ezagent 团队自己 3-5 个人，挑一个真实在做的最小 ezagent 功能，把它的"对齐/认领/挂产物/问进度"动作搬到这个最小形态上跑 2 周，每天记一次对齐耗时（同步会议 + 刷群问进度的分钟数），并记返工事件（因为没对齐/没挂钩牌而推倒重做的次数）。
 - **e2e 功能验收**（功能做没做出来）（签收 = 匿名访客截图，09 篇验证节）：
   ```
   匿名访客打开 /socialware/chat?session_uri=session://<ws>/default/<app>-1
@@ -196,12 +199,14 @@
   → 在会话里 @个人agent 提一个问题，curl flavor agent 回一句
   ```
   避开三坑：会话在服务节点内活着、`public_view:true` 字面布尔、SPA 已 build。
-- **价值验收**（功能有没有兑现价值——这一条是硬门槛，不达标就停）：
+- **价值验收**（开发 ezagent 功能时价值有没有兑现——这一条是硬门槛，不达标就停）：
   ```
-  2 周实测下来，参与的人每周对齐耗时（同步会议 + 刷群问进度分钟数）相比 agent 介入前下降；
-  且 agent 主动消息的"有用率"（被采纳/响应占比）不为零、不被全员静音。
+  2 周实测下来，开发那个真实 ezagent 功能时：
+  ① 参与的人每周对齐耗时（同步会议 + 刷群问进度分钟数）相比用这套 workspace 之前下降；
+  ② 返工事件（因没对齐/没挂钩牌而推倒重做）不增加、最好下降；
+  ③ agent 主动消息的"有用率"（被采纳/响应占比）不为零、不被全员静音。
   ```
-  **降了再往阶段 2 走；没降或全员把 agent 静音，就停下来重审"个人 agent 是不是真需求"，别继续造剩下 7.5 周。** 注意：此处只是早期定性信号（样本=自己，非外部用户），它能证伪"agent 反而制造噪音"，但不能证明"对外团队愿迁移"——后者要外部访谈，不在本阶段。
+  **对齐/返工降了再往阶段 2 走；没降或全员把 agent 静音，就停下来重审"这套 workspace 是不是真帮到 ezagent 团队自己的开发"，别继续造剩下的阶段。** 注意：此处是 ezagent 团队自己用自己的真实开发场景实测（单一内部情境），它能证伪"这套流程反而是负担 / agent 制造噪音"；至于"外部团队愿不愿用"是后续阶段的问题，不在本阶段。
 
 ### 阶段 2 · 节点认领 + 产物挂载（里程碑 2，~3 周，最大块）
 
@@ -259,12 +264,12 @@
 | 阶段 | 里程碑 | 估时 | 关键交付 | 主要档位 |
 |---|---|---|---|---|
 | 0 | 脚手架 | 0.5 周 | 空壳 domain + SPA build + 库 | 配置 |
-| 1 | 单人 agent + 导图出口 + **核心赌注价值验证** | 2 周 | socialware 出口 + curl agent + **对齐时长实测** | **现成组合 + 价值闸门** |
+| 1 | 让团队用它跑通一个最小开发 + **核心赌注价值验证** | 2 周 | socialware 出口 + curl agent + **跑通一次真实 ezagent 功能开发 + 对齐/返工实测** | **现成组合 + 价值闸门** |
 | 2 | 节点认领 + 产物挂载 | 3 周 | mindmap domain + 飞书挂载 | **最大自研** |
 | 3 | GitHub 集成 | 3 周 | GitHub 出入站双向同步 | **第二大自研** |
 | 4 | 闭环看板 | 1.5 周 | 看板视图 + 周报镜像 | 现成组合 |
 
-> MVP 总估 ~10 周（不含在建 world/agent-schema）。阶段 1 多出来的 0.5 周是核心赌注的价值闸门——**这是省钱不是花钱**：用 2 周证伪"agent 反而制造噪音"，避免在错误假设上继续投 7.5 周自研（俞军评审：预期效用 =（收益−成本）× 概率，agent 赌注自标"低概率高成本"，不前置验证就是没做这个乘法）。阶段 1 价值闸门绿了，剩余阶段才有意义。
+> MVP 总估 ~10 周（不含在建 world/agent-schema）。阶段 1 的价值闸门——**这是省钱不是花钱**：用 2 周实测"用这套 workspace 开发 ezagent 功能时，对齐/返工成本到底降没降"，避免在"它其实是负担/agent 制造噪音"这个错误假设上继续投后面 8 周自研（俞军评审：预期效用 =（收益−成本）× 概率，agent 赌注自标"低概率高成本"，不前置验证就是没做这个乘法）。阶段 1 价值闸门绿了，剩余阶段才有意义。
 
 ---
 
@@ -280,7 +285,41 @@
 | R6 | **world / agent-schema 未进 main** | 若把"统一出口/勾选框/作者 UX"压在它们身上会卡死 | 已知（`research/A-ezagent能力盘点.md` §6/§7C） | MVP 严格只用 main 上 socialware 原语；`public_view` 用 CLI/seed 设而非等 UI 勾选框 |
 | R7 | **飞书文档变更事件能否订阅进 dispatch** 未实测 | 功能 6.4"agent 实时追踪飞书变更"可能要轮询替代 | **unverified**（`03-思维导图.md:146`） | 阶段 2 实测飞书 webhook 事件类型；不支持则降级为 agent 定期拉取 |
 | R8 | **CapBAC 用于"节点认领"的语义匹配度** 未验证 | 认领可能需要超出 5 轴权限模型的字段 | **unverified** | 阶段 2 先用 Grant 表达"谁认领了哪个节点"，若 5 轴不够再在节点 slice 里补认领元数据（责任人 User URI + 认领时间） |
-| R9 | **curl flavor agent 的"主动盯"能力**：它能否被触发式调用（节点变化→agent 主动 notify） | 功能 3"agent 主动提醒"可能要外部定时器驱动。**失败则架构返工范围**：仅"主动盯"这一交付要改驱动方式（订阅→cron），不推翻 agent/节点模型本身，返工面较窄 | **unverified** | **提到阶段 1 与价值闸门同期实测** agent 是否能订阅节点事件主动触发；不行则用 cron/定时 dispatch 唤醒 agent 检查。注意：R9 验的是"技术能不能触发"，不等于"触发后对齐时长真的降"——后者是阶段 1 价值验收，两者都要过 |
+| R9 | **curl flavor agent 的"主动盯"能力**：它能否被触发式调用（节点变化→agent 主动 notify） | 功能 3"agent 主动提醒"可能要外部定时器驱动。**失败则架构返工范围**：仅"主动盯"这一交付要改驱动方式（订阅→cron），不推翻 agent/节点模型本身，返工面较窄 | **unverified** | **提到阶段 1 与价值闸门同期实测** agent 是否能订阅节点事件主动触发；不行则用 cron/定时 dispatch 唤醒 agent 检查。注意：R9 验的是"技术能不能触发"，不等于"触发后对齐/返工成本真的降"——后者是阶段 1 价值验收，两者都要过 |
 | R10 | **xmind 是私有格式**、excalidraw/obsidian 各自格式 | 真正解析内容做不到，只能挂文件引用 | 已知（`research/B-工具选型调研.md:34/36`） | MVP 明确只做"挂文件路径/id 引用 + 附件下载"，不解析内容、不做真相源（导图真相源用 markmap Markdown，`research/B-工具选型调研.md:43`） |
 
 **总结三条**：① 底座够用、缺一个核心数据模型——会话/agent/出口/权限/审计/飞书都现成，唯独"思维导图+节点+认领+挂载"必须自研（阶段 2，最大块）。② "每人一个 agent + 网页出口"几乎免费——`Entity.Agent`(curl) + socialware 公开会话就能搭雏形（阶段 1）。③ 最大两块自研是 mindmap domain（阶段 2）和 GitHub 双向同步（阶段 3）；别把 world/agent-schema/loom/autoservice 当已有实现排期（依赖在建，R6）。
+
+---
+
+## 实测验证状态（2026-06-22 · 杜绝想象 · 对真实代码核实 + e2e 实跑）
+
+> 本节是对上面所有技术 claim 的诚实分类：哪些**已 e2e 实跑验证**、哪些**file:line 静态核实过**、哪些**现状不存在需自研**、哪些**依赖在建别当已有**。搭建计划必须照这个分类走，不许把"需自研/在建"当"现成"用。
+
+### ✅ e2e 实跑验证通过（当前 main `e2abc02f`，OTP27/1.18）
+| 能力 | 怎么验的 | 结果 |
+|---|---|---|
+| **网页出口 = socialware 公开会话**（产品核心出口）| `/tmp/sw_verify.exs`：①`SessionTemplate.persist_version_as_system(%{public_view: true})` ②`Kind.spawn(Entity.Session, behaviors: socialware_behaviors())` ③`ConfigActions.system_set_working_copy` ④`PublicView.public_view?(session)` | STEP1 建模板成功；**STEP3 `public_view?=true`**（公开路由的门控通过）|
+| **每人一个 agent（Entity.Agent spawn）+ 收发消息（dispatch）** | 实跑 echo / curl-deepseek / cc-claude 三种 agent | echo `{:ok,%{echo:}}`；curl 真调 deepseek 回 `"PONG"`；cc 真 claude 回 `"PONG"` |
+
+> 结论：产品两大支柱（网页出口、个人 agent + 消息闭环）在真实 ezagent 上**已验证可搭**，不是臆想。
+
+### ✅ file:line 静态核实通过（引用真实，非编造行号）
+- 飞书出站现成：`def adapters, do: [{FeishuAdapter, FeishuChatBinding}]`（`apps/ezagent_plugin_feishu/lib/ezagent/plugin_feishu/application.ex:120`）✓
+- 飞书入站现成：`InboundDispatcher.dispatch/1`（`inbound_dispatcher.ex:58`）✓
+- external_mirror 出站契约 + `:push`/`:pull` 两种 KIND（`apps/ezagent_domain_external_mirror/lib/ezagent/external_mirror/adapter.ex:69-107`）✓
+- 分发收口 P14：`Invocation.dispatch/1`（`apps/ezagent_core/lib/ezagent/invocation.ex:88`）✓
+- 节点状态写：`{:set, key, value}` effect（`apps/ezagent_core/lib/ezagent/behavior/effects.ex:9,167`）✓
+- 公开门控：`public_view?/1`（`apps/ezagent_domain_socialware/lib/ezagent/socialware/public_view.ex:38`）✓
+
+### 🔨 现状不存在 · 需自研（**别当现成用**，搭建计划里这几块是真工程量）
+- **GitHub 出入站**：仓库里**没有** GitHub adapter/plugin。要自研：出站 adapter（抄 feishu 样板，节点状态→issue/评论）+ 入站 webhook plugin（PR/issue 事件→`Invocation.dispatch/1`）。Projects v2 必须 GraphQL。**第二大自研工程。**
+- **xmind / excalidraw / obsidian 轻挂载**：仓库里**没有**这些 connector。MVP 做法=把 `.xmind`/`.excalidraw` 文件引用（路径/id）写进节点 slice（`{:set}` effect），不做真正双向同步。附件下载复用 socialware 客户面。
+- **思维导图节点模型**：ezagent 里**没有**"导图节点"这种 Kind/Behavior。这是路 A 的第一大自研块——要么作为 SessionTemplate 内容结构、要么新写一个 plugin 定义节点 Kind（认领=Grant cap、挂载=slice、状态机=Behavior actions）。**需先做技术预研（标 unverified）。**
+
+### ⚠️ 依赖在建 · 别当已有引用
+- **world**（统一前端，public_view 勾选框 / 作者 UX 会落这）、**agent-schema**（编排契约）——上游在建，当前 main 没有。
+- **loom / autoservice**——只是设计词汇，**未进代码**，搭建计划不许引用为实现。
+
+### 阶段 0（建议补在阶段 1 之前）：技术预研，把🔨那三块的 unverified 拆掉
+先用 1-2 周做最小验证：①导图节点用 SessionTemplate 内容结构能不能表达"节点+认领+挂载+状态"（不行就得写新 plugin）；②自研一个最小 GitHub 入站 webhook 能不能把一条 PR 事件 `Invocation.dispatch` 进会话。这两个 unverified 不拆，后面排期是悬空的。
