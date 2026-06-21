@@ -27,11 +27,11 @@ defmodule Ezagent.Behavior.Mindmap do
   alias EzagentPluginMindmap.Markmap
 
   action(:add_node,
-    args: %{parent_id: :any, title: :string},
+    args: %{parent_id: :string, title: :string},
     returns: %{id: :string},
     caps: [:add_node],
     modes: [:call],
-    description: "新增一个节点；parent_id=nil 建根"
+    description: "新增一个节点；parent_id=\"\"（空串）建根"
   )
 
   action(:rename_node,
@@ -43,11 +43,11 @@ defmodule Ezagent.Behavior.Mindmap do
   )
 
   action(:move_node,
-    args: %{id: :string, new_parent_id: :any},
+    args: %{id: :string, new_parent_id: :string},
     returns: %{},
     caps: [:move_node],
     modes: [:call],
-    description: "把节点移到新父节点下（禁环）"
+    description: "把节点移到新父节点下（new_parent_id=\"\" 移到根，禁环）"
   )
 
   action(:remove_node,
@@ -106,7 +106,7 @@ defmodule Ezagent.Behavior.Mindmap do
   # ---------------------------------------------------------------
 
   def handle_add_node(args, ctx) do
-    parent_id = Map.get(args, :parent_id)
+    parent_id = nilify(Map.get(args, :parent_id))
     title = Map.fetch!(args, :title)
     nodes = ctx[:read].(:nodes, %{})
     root_id = ctx[:read].(:root_id, nil)
@@ -146,7 +146,8 @@ defmodule Ezagent.Behavior.Mindmap do
     end
   end
 
-  def handle_move_node(%{id: id, new_parent_id: new_parent_id}, ctx) do
+  def handle_move_node(%{id: id} = args, ctx) do
+    new_parent_id = nilify(Map.get(args, :new_parent_id))
     nodes = ctx[:read].(:nodes, %{})
 
     cond do
@@ -211,6 +212,11 @@ defmodule Ezagent.Behavior.Mindmap do
   defp current_tree(ctx) do
     %{nodes: ctx[:read].(:nodes, %{}), root_id: ctx[:read].(:root_id, nil)}
   end
+
+  # 把 dispatch 边界传来的空串归一为 nil（根）；nil 也照样是根。
+  defp nilify(nil), do: nil
+  defp nilify(""), do: nil
+  defp nilify(v), do: v
 
   # `maybe_ancestor` 是否是 `node_id` 的（含自身）祖先链下的后代？用于禁环。
   defp descendant?(nodes, node_id, maybe_descendant) do
