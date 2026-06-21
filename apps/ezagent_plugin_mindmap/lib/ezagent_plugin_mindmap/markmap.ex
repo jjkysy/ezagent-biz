@@ -100,8 +100,11 @@ defmodule EzagentPluginMindmap.Markmap do
       end)
 
     case result do
-      {:error, _} = err -> err
-      %{nodes: nodes, root_id: root_id, seq: seq} -> {:ok, %{nodes: nodes, root_id: root_id, seq: seq}}
+      {:error, _} = err ->
+        err
+
+      %{nodes: nodes, root_id: root_id, seq: seq} ->
+        {:ok, %{nodes: nodes, root_id: root_id, seq: seq}}
     end
   end
 

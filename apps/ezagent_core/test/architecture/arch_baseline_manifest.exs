@@ -160,7 +160,10 @@
   # prior baseline comment mis-stated LegacyConfig as −8; the scanned regex
   # counts 7). The PR-2 applied-turn marker remains.
   # arch-cap-bump: PR-2 applied-turn marker; curl legacy shims deleted (−14)
-  set_effect_sites: 121,
+  # arch-cap-bump: ezagent_plugin_mindmap (df-prd 增量1) — Mindmap Behavior 把整棵
+  #   节点树收在单一 `:tree` key、所有写动作经唯一的 `commit/1` 收敛，全插件只新增
+  #   1 处 set-effect 站点（已是结构最小：写状态的 Behavior 至少需 1 条 set）。121→122。
+  set_effect_sites: 122,
   cross_slice_set_violations: 0,
   missing_cap_check_mutating_actions: 0,
   kind_runtime_ordering_violations: 0,

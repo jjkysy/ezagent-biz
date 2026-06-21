@@ -7,17 +7,22 @@ defmodule Ezagent.Behavior.Mindmap do
   读用 `ctx[:read].(:key, default)`，写用 `{:set, key, value}` effect——插件作者永不碰
   slice/snapshot。
 
-  ## State 形状（top-level keys）
+  ## State 形状
 
-      %{
-        nodes: %{node_id => %{parent_id: id|nil, title: String.t(), order: int}},
-        root_id: node_id | nil,
-        seq: integer()        # 单调计数器，生成确定性 node_id（禁 Math.random/时间）
-      }
+  整棵树收在**单一** `:tree` key（一处写入站点，契合 arch.scan set_effect_sites
+  计数器"收敛状态写入"的意图）：
+
+      %{tree: %{
+          nodes: %{node_id => %{parent_id: id|nil, title: String.t(), order: int}},
+          root_id: node_id | nil,
+          seq: integer()        # 单调计数器，确定性 node_id（禁 Math.random/时间）
+        }}
+
+  所有写动作统一经 `commit/1` 发一条 set-:tree effect——全文唯一的 set-effect 字面。
 
   ## Actions
 
-  - `add_node(parent_id, title)` — `parent_id=nil` 建根；parent 不存在 → `{:error, :parent_not_found}`
+  - `add_node(parent_id, title)` — `parent_id=""` 建根；parent 不存在 → `{:error, :parent_not_found}`
   - `rename_node(id, title)` / `move_node(id, new_parent_id)`（禁环）/ `remove_node(id)`（级联删子树）
   - `get_tree()` / `export_markmap()` / `import_markmap(markdown)`（覆盖，解析失败不清空）
   """
@@ -83,6 +88,7 @@ defmodule Ezagent.Behavior.Mindmap do
   )
 
   # Mindmap Kind 的 kind 轴 = :mindmap。手动导出以覆盖宏的 :any 默认（对齐 Echo）。
+  @doc false
   def required_caps do
     %{
       add_node: Ezagent.Capability.cap(:mindmap, __MODULE__, :add_node),
@@ -96,21 +102,21 @@ defmodule Ezagent.Behavior.Mindmap do
   end
 
   # admin-only Behavior（增量 1）；增量 2 才换 per-node 授权。
+  @doc false
   def data_owner(_), do: :no_owner
 
   @impl Ezagent.Lifecycle
-  def create(_args), do: {:ok, %{nodes: %{}, root_id: nil, seq: 0}}
+  def create(_args), do: {:ok, %{tree: empty_tree()}}
 
   # ---------------------------------------------------------------
   # handle_<action>/2
   # ---------------------------------------------------------------
 
+  @doc false
   def handle_add_node(args, ctx) do
     parent_id = nilify(Map.get(args, :parent_id))
     title = Map.fetch!(args, :title)
-    nodes = ctx[:read].(:nodes, %{})
-    root_id = ctx[:read].(:root_id, nil)
-    seq = ctx[:read].(:seq, 0)
+    %{nodes: nodes, root_id: root_id, seq: seq} = tree(ctx)
 
     cond do
       parent_id != nil and not Map.has_key?(nodes, parent_id) ->
@@ -121,34 +127,29 @@ defmodule Ezagent.Behavior.Mindmap do
         id = "n" <> Integer.to_string(new_seq)
         order = Enum.count(nodes, fn {_id, n} -> n.parent_id == parent_id end)
         new_nodes = Map.put(nodes, id, %{parent_id: parent_id, title: title, order: order})
-
-        effects = [{:set, :nodes, new_nodes}, {:set, :seq, new_seq}]
-
-        effects =
-          if root_id == nil and parent_id == nil,
-            do: effects ++ [{:set, :root_id, id}],
-            else: effects
-
-        {:ok, %{id: id}, effects}
+        new_root = root_id || if(parent_id == nil, do: id, else: nil)
+        {:ok, %{id: id}, [commit(%{nodes: new_nodes, root_id: new_root, seq: new_seq})]}
     end
   end
 
+  @doc false
   def handle_rename_node(%{id: id, title: title}, ctx) do
-    nodes = ctx[:read].(:nodes, %{})
+    t = tree(ctx)
 
-    case Map.fetch(nodes, id) do
+    case Map.fetch(t.nodes, id) do
       {:ok, node} ->
-        new_nodes = Map.put(nodes, id, %{node | title: title})
-        {:ok, %{}, [{:set, :nodes, new_nodes}]}
+        {:ok, %{}, [commit(%{t | nodes: Map.put(t.nodes, id, %{node | title: title})})]}
 
       :error ->
         {:error, :node_not_found}
     end
   end
 
+  @doc false
   def handle_move_node(%{id: id} = args, ctx) do
     new_parent_id = nilify(Map.get(args, :new_parent_id))
-    nodes = ctx[:read].(:nodes, %{})
+    t = tree(ctx)
+    nodes = t.nodes
 
     cond do
       not Map.has_key?(nodes, id) ->
@@ -164,64 +165,70 @@ defmodule Ezagent.Behavior.Mindmap do
         node = Map.fetch!(nodes, id)
         order = Enum.count(nodes, fn {_i, n} -> n.parent_id == new_parent_id end)
         new_nodes = Map.put(nodes, id, %{node | parent_id: new_parent_id, order: order})
-        {:ok, %{}, [{:set, :nodes, new_nodes}]}
+        {:ok, %{}, [commit(%{t | nodes: new_nodes})]}
     end
   end
 
+  @doc false
   def handle_remove_node(%{id: id}, ctx) do
-    nodes = ctx[:read].(:nodes, %{})
+    t = tree(ctx)
 
-    case Map.has_key?(nodes, id) do
+    case Map.has_key?(t.nodes, id) do
       false ->
         {:error, :node_not_found}
 
       true ->
-        to_remove = subtree_ids(nodes, id)
-        new_nodes = Map.drop(nodes, to_remove)
-        {:ok, %{}, [{:set, :nodes, new_nodes}]}
+        new_nodes = Map.drop(t.nodes, subtree_ids(t.nodes, id))
+        new_root = if id == t.root_id, do: nil, else: t.root_id
+        {:ok, %{}, [commit(%{t | nodes: new_nodes, root_id: new_root})]}
     end
   end
 
+  @doc false
   def handle_get_tree(_args, ctx) do
-    {:ok, %{tree: current_tree(ctx)}, []}
+    t = tree(ctx)
+    {:ok, %{tree: %{nodes: t.nodes, root_id: t.root_id}}, []}
   end
 
+  @doc false
   def handle_export_markmap(_args, ctx) do
-    tree = current_tree(ctx)
+    t = tree(ctx)
 
-    case tree.root_id do
+    case t.root_id do
       nil -> {:ok, %{markdown: ""}, []}
-      _ -> {:ok, %{markdown: Markmap.render(tree)}, []}
+      _ -> {:ok, %{markdown: Markmap.render(%{nodes: t.nodes, root_id: t.root_id})}, []}
     end
   end
 
+  @doc false
   def handle_import_markmap(%{markdown: markdown}, _ctx) do
     case Markmap.parse(markdown) do
       {:ok, %{nodes: nodes, root_id: root_id, seq: seq}} ->
-        {:ok, %{count: map_size(nodes)},
-         [{:set, :nodes, nodes}, {:set, :root_id, root_id}, {:set, :seq, seq}]}
+        # 覆盖；解析成功才写——失败分支不发 effect，绝不静默清空已有树。
+        {:ok, %{count: map_size(nodes)}, [commit(%{nodes: nodes, root_id: root_id, seq: seq})]}
 
       {:error, reason} ->
-        # 覆盖前校验失败：绝不静默清空已有树
         {:error, reason}
     end
   end
 
   # --- helpers --------------------------------------------------------
 
-  defp current_tree(ctx) do
-    %{nodes: ctx[:read].(:nodes, %{}), root_id: ctx[:read].(:root_id, nil)}
-  end
+  defp empty_tree, do: %{nodes: %{}, root_id: nil, seq: 0}
+
+  defp tree(ctx), do: ctx[:read].(:tree, empty_tree())
+
+  # 全文唯一的 `{:set` 字面——所有写动作经此收敛（arch.scan set_effect_sites 友好）。
+  defp commit(tree), do: {:set, :tree, tree}
 
   # 把 dispatch 边界传来的空串归一为 nil（根）；nil 也照样是根。
   defp nilify(nil), do: nil
   defp nilify(""), do: nil
   defp nilify(v), do: v
 
-  # `maybe_ancestor` 是否是 `node_id` 的（含自身）祖先链下的后代？用于禁环。
+  # `maybe_descendant` 是否落在 `node_id` 的子树内（含自身）？用于禁环。
   defp descendant?(nodes, node_id, maybe_descendant) do
-    maybe_descendant == node_id or
-      ancestors(nodes, maybe_descendant) |> Enum.member?(node_id)
+    maybe_descendant == node_id or Enum.member?(ancestors(nodes, maybe_descendant), node_id)
   end
 
   defp ancestors(nodes, id) do
