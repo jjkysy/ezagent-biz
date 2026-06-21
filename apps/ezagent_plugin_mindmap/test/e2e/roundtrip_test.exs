@@ -68,8 +68,11 @@ defmodule EzagentPluginMindmap.RoundtripTest do
 
   defp wait_until_ready(uri) do
     case Ezagent.ReadyGate.status(uri) do
-      :ready -> :ok
-      _ -> Process.sleep(5)
+      :ready ->
+        :ok
+
+      _ ->
+        Process.sleep(5)
         wait_until_ready(uri)
     end
   end

@@ -1,56 +1,60 @@
 defmodule Ezagent.Behavior.MindmapTest do
   @moduledoc """
   Mindmap Behavior 的 handler 单元测试——直接调 `handle_<action>/2`（桩 ctx），
-  不经真实 dispatch（dispatch 往返见 e2e）。
+  不经真实 dispatch（dispatch 往返见 e2e）。state 收在单一 `:tree` key。
   """
   use ExUnit.Case, async: true
 
   alias Ezagent.Behavior.Mindmap
 
-  # 桩 ctx：read 从给定 state 读
-  defp ctx(state), do: %{read: fn k, d -> Map.get(state, k, d) end}
+  # 桩 ctx：read 从 %{tree: tree} 读
+  defp ctx(tree), do: %{read: fn k, d -> Map.get(%{tree: tree}, k, d) end}
 
-  defp set_effect(effects, key) do
+  # 提取 commit 的 {:set, :tree, tree}
+  defp committed(effects) do
     Enum.find_value(effects, fn
-      {:set, ^key, v} -> {:found, v}
+      {:set, :tree, t} -> t
       _ -> nil
     end)
   end
 
   describe "create/1" do
-    test "初始 state 为空树" do
-      assert {:ok, %{nodes: %{}, root_id: nil, seq: 0}} = Mindmap.create(%{})
+    test "初始 state = 单一 :tree 空树" do
+      assert {:ok, %{tree: %{nodes: %{}, root_id: nil, seq: 0}}} = Mindmap.create(%{})
     end
   end
 
   describe "add_node" do
-    test "建根：返回 n1，置 root_id 与 seq" do
+    test "建根（parent_id=\"\"）：返回 n1，root_id/seq 进 tree" do
       assert {:ok, %{id: "n1"}, effects} =
-               Mindmap.handle_add_node(%{parent_id: nil, title: "根"}, ctx(%{nodes: %{}, root_id: nil, seq: 0}))
+               Mindmap.handle_add_node(%{parent_id: "", title: "根"}, ctx(empty()))
 
-      assert {:found, nodes} = set_effect(effects, :nodes)
-      assert nodes["n1"] == %{parent_id: nil, title: "根", order: 0}
-      assert {:found, "n1"} = set_effect(effects, :root_id)
-      assert {:found, 1} = set_effect(effects, :seq)
+      t = committed(effects)
+      assert t.nodes["n1"] == %{parent_id: nil, title: "根", order: 0}
+      assert t.root_id == "n1"
+      assert t.seq == 1
     end
 
-    test "在父下加子：order 递增，不重置 root_id" do
-      state = %{nodes: %{"n1" => %{parent_id: nil, title: "根", order: 0}}, root_id: "n1", seq: 1}
-      assert {:ok, %{id: "n2"}, effects} = Mindmap.handle_add_node(%{parent_id: "n1", title: "子1"}, ctx(state))
-      assert {:found, nodes} = set_effect(effects, :nodes)
-      assert nodes["n2"] == %{parent_id: "n1", title: "子1", order: 0}
-      assert set_effect(effects, :root_id) == nil
+    test "在父下加子：order 递增，root_id 不变" do
+      tree = %{nodes: %{"n1" => %{parent_id: nil, title: "根", order: 0}}, root_id: "n1", seq: 1}
+
+      assert {:ok, %{id: "n2"}, effects} =
+               Mindmap.handle_add_node(%{parent_id: "n1", title: "子1"}, ctx(tree))
+
+      t = committed(effects)
+      assert t.nodes["n2"] == %{parent_id: "n1", title: "子1", order: 0}
+      assert t.root_id == "n1"
     end
 
     test "parent 不存在 → parent_not_found" do
       assert {:error, :parent_not_found} =
-               Mindmap.handle_add_node(%{parent_id: "nope", title: "x"}, ctx(%{nodes: %{}, root_id: nil, seq: 0}))
+               Mindmap.handle_add_node(%{parent_id: "nope", title: "x"}, ctx(empty()))
     end
   end
 
   describe "move_node" do
     setup do
-      state = %{
+      tree = %{
         root_id: "n1",
         seq: 3,
         nodes: %{
@@ -60,24 +64,25 @@ defmodule Ezagent.Behavior.MindmapTest do
         }
       }
 
-      %{state: state}
+      %{tree: tree}
     end
 
-    test "成环被拒（把祖先移到自己后代下）", %{state: state} do
+    test "成环被拒（把祖先移到自己后代下）", %{tree: tree} do
       assert {:error, :would_create_cycle} =
-               Mindmap.handle_move_node(%{id: "n2", new_parent_id: "n3"}, ctx(state))
+               Mindmap.handle_move_node(%{id: "n2", new_parent_id: "n3"}, ctx(tree))
     end
 
-    test "正常移动", %{state: state} do
-      assert {:ok, %{}, effects} = Mindmap.handle_move_node(%{id: "n3", new_parent_id: "n1"}, ctx(state))
-      assert {:found, nodes} = set_effect(effects, :nodes)
-      assert nodes["n3"].parent_id == "n1"
+    test "正常移动", %{tree: tree} do
+      assert {:ok, %{}, effects} =
+               Mindmap.handle_move_node(%{id: "n3", new_parent_id: "n1"}, ctx(tree))
+
+      assert committed(effects).nodes["n3"].parent_id == "n1"
     end
   end
 
   describe "remove_node" do
     test "级联删子树" do
-      state = %{
+      tree = %{
         root_id: "n1",
         seq: 3,
         nodes: %{
@@ -87,38 +92,41 @@ defmodule Ezagent.Behavior.MindmapTest do
         }
       }
 
-      assert {:ok, %{}, effects} = Mindmap.handle_remove_node(%{id: "n2"}, ctx(state))
-      assert {:found, nodes} = set_effect(effects, :nodes)
-      assert Map.keys(nodes) == ["n1"]
+      assert {:ok, %{}, effects} = Mindmap.handle_remove_node(%{id: "n2"}, ctx(tree))
+      assert Map.keys(committed(effects).nodes) == ["n1"]
     end
   end
 
   describe "export/import markmap" do
     test "export 空树 → 空串" do
-      assert {:ok, %{markdown: ""}, []} = Mindmap.handle_export_markmap(%{}, ctx(%{nodes: %{}, root_id: nil}))
+      assert {:ok, %{markdown: ""}, []} = Mindmap.handle_export_markmap(%{}, ctx(empty()))
     end
 
     test "export 渲染 markmap" do
-      state = %{
+      tree = %{
         root_id: "n1",
+        seq: 2,
         nodes: %{
           "n1" => %{parent_id: nil, title: "根", order: 0},
           "n2" => %{parent_id: "n1", title: "子", order: 0}
         }
       }
 
-      assert {:ok, %{markdown: "# 根\n## 子\n"}, []} = Mindmap.handle_export_markmap(%{}, ctx(state))
+      assert {:ok, %{markdown: "# 根\n## 子\n"}, []} = Mindmap.handle_export_markmap(%{}, ctx(tree))
     end
 
     test "import 覆盖；解析失败不清空（返回 error，无 effect）" do
       assert {:ok, %{count: 2}, effects} =
-               Mindmap.handle_import_markmap(%{markdown: "# 根\n## 子\n"}, ctx(%{}))
+               Mindmap.handle_import_markmap(%{markdown: "# 根\n## 子\n"}, ctx(empty()))
 
-      assert {:found, nodes} = set_effect(effects, :nodes)
-      assert map_size(nodes) == 2
-      assert {:found, "n1"} = set_effect(effects, :root_id)
+      t = committed(effects)
+      assert map_size(t.nodes) == 2
+      assert t.root_id == "n1"
 
-      assert {:error, {:parse_failed, _}} = Mindmap.handle_import_markmap(%{markdown: ""}, ctx(%{}))
+      assert {:error, {:parse_failed, _}} =
+               Mindmap.handle_import_markmap(%{markdown: ""}, ctx(empty()))
     end
   end
+
+  defp empty, do: %{nodes: %{}, root_id: nil, seq: 0}
 end

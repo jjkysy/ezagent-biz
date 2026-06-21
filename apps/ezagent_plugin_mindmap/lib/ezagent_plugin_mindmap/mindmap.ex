@@ -23,8 +23,10 @@ defmodule EzagentPluginMindmap.Mindmap do
   attach(Ezagent.Behavior.Mindmap)
 
   # Kind.Server 仍读 behaviors/0。
+  @doc false
   def behaviors, do: [Ezagent.Behavior.Mindmap]
 
   # Kind.Server 仍读 persistence/0。
+  @doc false
   def persistence, do: :ephemeral
 end
