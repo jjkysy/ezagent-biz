@@ -79,4 +79,36 @@ defmodule EzagentPluginMindmap.Miro.Sync do
     result = %{board_id: board_id, mapping: mapping, errors: Enum.reverse(errors)}
     if errors == [], do: {:ok, result}, else: {:error, result}
   end
+
+  @type inbound_op :: %{miro_id: String.t(), content: String.t(), parent_ez_id: String.t() | nil}
+
+  @doc """
+  入站检测（**纯函数、非破坏性**）：对比 Miro 当前节点 vs 上次出站映射，找出**人在
+  Miro 新加**的节点（miro_id 不在映射里）。返回 `[%{miro_id, content, parent_ez_id}]`，
+  parent_ez_id 由映射反查（根 / 父尚未知则 nil）。
+
+  **只检测新增**——真相源 = ezagent，Miro 端删除**不**回删 ezagent（下次 `sync_out`
+  重建即自愈），故此处不产出 delete op。Miro 节点 parent 在 GET 响应里是
+  `node["parent"]["id"]`（根 `data.isRoot==true`、无 parent）。
+  """
+  @spec detect_inbound([map()], map()) :: [inbound_op()]
+  def detect_inbound(miro_nodes, mapping) when is_list(miro_nodes) and is_map(mapping) do
+    known = mapping |> Map.values() |> MapSet.new()
+    reverse = Map.new(mapping, fn {ez, miro} -> {miro, ez} end)
+
+    miro_nodes
+    |> Enum.reject(fn n -> MapSet.member?(known, n["id"]) end)
+    |> Enum.map(fn n ->
+      parent_miro = get_in(n, ["parent", "id"])
+
+      %{
+        miro_id: n["id"],
+        content: strip_html(get_in(n, ["data", "nodeView", "data", "content"]) || ""),
+        parent_ez_id: parent_miro && Map.get(reverse, parent_miro)
+      }
+    end)
+  end
+
+  # Miro 节点 content 带 `<p>…</p>` 包裹——剥成纯文本作 ezagent 标题。
+  defp strip_html(s), do: s |> String.replace(~r{</?[a-zA-Z][^>]*>}, "") |> String.trim()
 end
