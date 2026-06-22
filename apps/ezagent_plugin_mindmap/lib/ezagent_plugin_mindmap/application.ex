@@ -60,7 +60,10 @@ defmodule EzagentPluginMindmap.Application do
   @impl Ezagent.Plugin
   def children do
     [
-      {DynamicSupervisor, name: EzagentPluginMindmap.InstanceSupervisor, strategy: :one_for_one}
+      {DynamicSupervisor, name: EzagentPluginMindmap.InstanceSupervisor, strategy: :one_for_one},
+      # Miro 双向同步轮询器：按 mindmap URI 唯一注册 + 监督树下动态起停。
+      {Registry, keys: :unique, name: EzagentPluginMindmap.MiroSyncRegistry},
+      {DynamicSupervisor, name: EzagentPluginMindmap.MiroSyncSupervisor, strategy: :one_for_one}
     ]
   end
 

@@ -21,15 +21,38 @@ defmodule EzagentPluginMindmap.MiroSync do
   alias EzagentPluginMindmap.Miro.Sync
 
   @default_interval 30_000
+  @registry EzagentPluginMindmap.MiroSyncRegistry
+  @supervisor EzagentPluginMindmap.MiroSyncSupervisor
 
   @doc false
-  def start_link(opts), do: GenServer.start_link(__MODULE__, Map.new(opts))
+  def start_link(opts) do
+    opts = Map.new(opts)
+    GenServer.start_link(__MODULE__, opts, name: via(opts.uri))
+  end
 
-  @doc "立刻跑一轮双向同步，返回 `{:ok, %{inbound: n}}` | `{:error, reason}`。"
-  def sync_now(pid), do: GenServer.call(pid, :sync_now, 30_000)
+  @doc """
+  绑定一个 mindmap↔Miro 板的双向同步：在 plugin 监督树下起轮询器，按 mindmap URI
+  唯一注册。`opts` 可带 `interval:`（ms，默认 30s；`0` 关周期、只手动 `sync_now`）。
+  """
+  @spec bind(URI.t(), String.t(), keyword()) :: DynamicSupervisor.on_start_child()
+  def bind(uri, board_id, opts \\ []) do
+    spec = {__MODULE__, Keyword.merge([uri: uri, board_id: board_id], opts)}
+    DynamicSupervisor.start_child(@supervisor, spec)
+  end
 
-  @doc "拆镜像：删 Miro 板 + 停轮询（ezagent 删 mindmap 时调）。"
-  def teardown(pid), do: GenServer.call(pid, :teardown, 30_000)
+  @doc "解绑：拆镜像（删 Miro 板）+ 停轮询。等同 ezagent 删 mindmap 的联动。"
+  @spec unbind(URI.t()) :: :ok | {:error, term()}
+  def unbind(uri), do: teardown(uri)
+
+  @doc "立刻跑一轮双向同步（`ref` = pid 或 mindmap URI）。`{:ok, %{inbound: n}}` | `{:error, _}`。"
+  def sync_now(ref), do: GenServer.call(server(ref), :sync_now, 30_000)
+
+  @doc "拆镜像：删 Miro 板 + 停轮询（`ref` = pid 或 mindmap URI）。"
+  def teardown(ref), do: GenServer.call(server(ref), :teardown, 30_000)
+
+  defp server(pid) when is_pid(pid), do: pid
+  defp server(%URI{} = uri), do: via(uri)
+  defp via(uri), do: {:via, Registry, {@registry, URI.to_string(uri)}}
 
   @impl true
   def init(opts) do

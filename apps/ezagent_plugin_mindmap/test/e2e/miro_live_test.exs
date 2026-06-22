@@ -172,6 +172,26 @@ defmodule EzagentPluginMindmap.MiroLiveTest do
       # 板已删：GET → 404
       assert {:error, {:http_status, 404, _}} = Miro.get_nodes(token, throwaway)
     end
+
+    test "bind/unbind：监督树下起轮询器 + sync_now(uri 经 Registry) + unbind 删板停轮询", ctx do
+      %{token: token, uri: uri, admin: admin} = ctx
+      {:ok, board} = Miro.create_board(token, "bind-test")
+      assert {:ok, %{id: _}} = dispatch(uri, "add_node", %{parent_id: "", title: "bind根"}, admin)
+
+      # bind：在 plugin 监督树下起轮询器（不手动 start_link）
+      assert {:ok, poller} = EzagentPluginMindmap.MiroSync.bind(uri, board, interval: 0)
+      assert is_pid(poller)
+
+      # 经 uri（Registry 解析）触发同步
+      assert {:ok, %{inbound: 0}} = EzagentPluginMindmap.MiroSync.sync_now(uri)
+      {:ok, n} = Miro.get_nodes(token, board)
+      assert Enum.any?(contents(n), &(&1 == "<p>bind根</p>"))
+
+      # unbind：删板 + 停轮询
+      assert :ok = EzagentPluginMindmap.MiroSync.unbind(uri)
+      refute Process.alive?(poller)
+      assert {:error, {:http_status, 404, _}} = Miro.get_nodes(token, board)
+    end
   end
 
   defp dispatch(uri, action, args, {caller, caps}) do

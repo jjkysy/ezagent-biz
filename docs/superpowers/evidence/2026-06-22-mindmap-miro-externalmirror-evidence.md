@@ -36,9 +36,12 @@
 4. **board_gone 非破坏性**：板被删→`:board_gone`，ezagent 树**不动**；
 5. **teardown**：删 Miro 板 + 轮询器停。
 
+## 片4：监督树接线 + bind/unbind ✅
+`children/0` 加 `MiroSyncRegistry`(unique) + `MiroSyncSupervisor`(DynamicSupervisor)。`MiroSync.bind(uri, board_id, opts)` 在监督树下起轮询器、按 mindmap URI 唯一注册；`unbind(uri)`=teardown（删板+停）。`sync_now/teardown` 接受 pid 或 uri（Registry 解析）。`do_dispatch` 用 sanctioned `URI.with_action/3`、caller 用 `URI.user(:system,:admin)`。
+**真 Miro e2e**（bind/unbind）：监督树下 bind 起轮询器→`sync_now(uri)`(Registry)→Miro 反映→`unbind(uri)` 删板+停。
+
 ## 全 gate
-非 live **35 测试 0 失败 5 排除**；compile/format/arch.scan/doc.scan/uri_query.scan/check_invariants(+lifecycle) 全过。
+非 live **36 测试 0 失败 6 排除** + **6 live 全绿**；compile/format/arch.scan(122)/doc.scan/uri_query.scan/check_invariants(+lifecycle) 全过。
 
 ## 完整性
-**plugin kind external_mirror 出入站 + 生命周期 已完整落地**（出站增量复用同板 / 入站非破坏性轮询 / 双向 GenServer / teardown / board-gone 自愈），全真 Miro e2e + 可视前端截图。**不越界**（未碰 session 锁死的 EM 域、未改 core/world）。
-- 后续小尾巴：把 MiroSync 接进 plugin children/0 的 DynamicSupervisor + 一个 bind 触发（机械活，GenServer 本体已 e2e 证）。
+**plugin kind external_mirror 出入站 + 生命周期 + 监督树接线 已完整落地**（出站增量复用同板 / 入站非破坏性轮询 / 双向 GenServer / bind-unbind / teardown / board-gone 自愈），全真 Miro e2e（6 live）+ 可视前端截图。**不越界**（未碰 session 锁死的 EM 域、未改 core/world）。
