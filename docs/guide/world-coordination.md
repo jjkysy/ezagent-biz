@@ -48,6 +48,7 @@ Keep this table current. Before starting world work, add your row; on finishing,
 | world beautification + restructure (#83) | TBD | `styles.css`, existing surfaces, design system | brainstorm pending |
 | Agent Console (#84) | TBD | new `agent_console` surface + its `*_data/*_actions` + `world_live.ex` route clause | brainstorm pending |
 | hello (Phase 0, #81) | TBD | none in world (isolated plugin) | handoff merged |
+| mindmap 操作面 (df-tech) | Sy (df-tech-yao) | **新增** `mindmap` surface：新建 `components/Mindmap.tsx` + `world/mindmap_data.ex` + `world/mindmap_actions.ex`；`world_live.ex` 仅加 route/state/白名单子句（最小）；`main.tsx` 加 render 分支。**不碰** styles.css / primitives / 他人 surface | in progress 2026-06-23 |
 
 ## 6. The checklist every world-touching handoff must include
 
