@@ -38,15 +38,23 @@ defmodule EzagentPluginMindmap.Application do
     b = Ezagent.Behavior.Mindmap
     k = EzagentPluginMindmap.Mindmap
 
-    [
-      {k, :add_node, b},
-      {k, :rename_node, b},
-      {k, :move_node, b},
-      {k, :remove_node, b},
-      {k, :get_tree, b},
-      {k, :export_markmap, b},
-      {k, :import_markmap, b}
-    ]
+    for a <- [
+          :add_node,
+          :rename_node,
+          :move_node,
+          :remove_node,
+          :set_stage,
+          :claim_node,
+          :unclaim_node,
+          :set_status,
+          :attach_artifact,
+          :detach_artifact,
+          :set_metric,
+          :get_tree,
+          :export_markmap,
+          :import_markmap
+        ],
+        do: {k, a, b}
   end
 
   @impl Ezagent.Plugin
