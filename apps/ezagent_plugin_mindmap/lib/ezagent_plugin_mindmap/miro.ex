@@ -75,18 +75,48 @@ defmodule EzagentPluginMindmap.Miro do
     end
   end
 
+  @doc """
+  删一个 mind-map 节点（experimental 端点，实测 204）。Miro 无 in-place update，
+  改名/移动靠 delete+create——这是增量同步的基础。
+  """
+  @spec delete_node(String.t(), miro_id(), miro_id()) :: :ok | {:error, term()}
+  def delete_node(token, board_id, miro_id) do
+    case delete(token, "/v2-experimental/boards/#{board_id}/mindmap_nodes/#{miro_id}") do
+      :ok -> :ok
+      {:error, _} = err -> err
+    end
+  end
+
+  @doc "删板上所有 mind-map 节点（复用同板前先清空）。"
+  @spec delete_all_nodes(String.t(), miro_id()) :: :ok | {:error, term()}
+  def delete_all_nodes(token, board_id) do
+    with {:ok, nodes} <- get_nodes(token, board_id) do
+      Enum.reduce_while(nodes, :ok, fn %{"id" => id}, _ ->
+        case delete_node(token, board_id, id) do
+          :ok -> {:cont, :ok}
+          err -> {:halt, err}
+        end
+      end)
+    end
+  end
+
   # --- :httpc helpers（对齐 feishu client）---------------------------------
+
+  # `{:body_format, :binary}`：让 :httpc 把 body 返成 binary，不是 charlist——
+  # 否则 to_string(字节列表) 会把每字节当码点再编码一遍 = UTF-8 双重编码（中文乱码）。
+  @http_opts [{:body_format, :binary}]
+  @http_http_opts [{:timeout, 15_000}, {:connect_timeout, 10_000}]
 
   defp post(token, path, payload) do
     body = Jason.encode!(payload)
     request = {String.to_charlist(@api <> path), auth_headers(token), ~c"application/json", body}
 
-    case :httpc.request(:post, request, [{:timeout, 15_000}, {:connect_timeout, 10_000}], []) do
+    case :httpc.request(:post, request, @http_http_opts, @http_opts) do
       {:ok, {{_, code, _}, _, resp}} when code in [200, 201] ->
-        Jason.decode(to_string(resp))
+        Jason.decode(resp)
 
       {:ok, {{_, code, _}, _, resp}} ->
-        {:error, {:http_status, code, to_string(resp)}}
+        {:error, {:http_status, code, resp}}
 
       {:error, reason} ->
         {:error, {:http_error, reason}}
@@ -96,9 +126,26 @@ defmodule EzagentPluginMindmap.Miro do
   defp get(token, path) do
     request = {String.to_charlist(@api <> path), auth_headers(token)}
 
-    case :httpc.request(:get, request, [{:timeout, 15_000}, {:connect_timeout, 10_000}], []) do
+    case :httpc.request(:get, request, @http_http_opts, @http_opts) do
       {:ok, {{_, 200, _}, _, resp}} ->
-        Jason.decode(to_string(resp))
+        Jason.decode(resp)
+
+      {:ok, {{_, code, _}, _, resp}} ->
+        {:error, {:http_status, code, resp}}
+
+      {:error, reason} ->
+        {:error, {:http_error, reason}}
+    end
+  end
+
+  defp delete(token, path) do
+    request = {String.to_charlist(@api <> path), auth_headers(token)}
+
+    case :httpc.request(:delete, request, [{:timeout, 15_000}, {:connect_timeout, 10_000}], []) do
+      # 404 也算成功：删除是幂等的，节点已不在 = 已达目标状态（父节点删除会
+      # 级联删子节点，随后再删那个子节点就会 404）。
+      {:ok, {{_, code, _}, _, _}} when code in [200, 204, 404] ->
+        :ok
 
       {:ok, {{_, code, _}, _, resp}} ->
         {:error, {:http_status, code, to_string(resp)}}

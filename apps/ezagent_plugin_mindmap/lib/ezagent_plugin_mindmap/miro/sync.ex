@@ -43,20 +43,40 @@ defmodule EzagentPluginMindmap.Miro.Sync do
   def push_tree(tree, board_name) do
     with {:ok, %{token: token}} <- Miro.read_creds(),
          {:ok, board_id} <- Miro.create_board(token, board_name) do
-      {mapping, errors} =
-        tree
-        |> tree_to_ops()
-        |> Enum.reduce({%{}, []}, fn op, {map, errs} ->
-          parent_miro = op.parent_ez_id && Map.get(map, op.parent_ez_id)
-
-          case Miro.create_node(token, board_id, op.content, parent_miro) do
-            {:ok, miro_id} -> {Map.put(map, op.ez_id, miro_id), errs}
-            {:error, e} -> {map, [{op.ez_id, e} | errs]}
-          end
-        end)
-
-      result = %{board_id: board_id, mapping: mapping, errors: Enum.reverse(errors)}
-      if errors == [], do: {:ok, result}, else: {:error, result}
+      finish(board_id, create_tree(token, board_id, tree))
     end
+  end
+
+  @doc """
+  出站增量同步：把树推到**已存在的同一块板**（复用 board_id）。Miro 无 in-place
+  update，故策略 = 删板上现有 mind-map 节点 + 按树重建（幂等、复用板）。返回
+  `{:ok, %{board_id, mapping}}`——mapping 是 ez_id↔miro_id，供入站回声防护对比。
+  """
+  @spec sync_out(%{nodes: map(), root_id: String.t() | nil}, String.t()) ::
+          {:ok, map()} | {:error, term()}
+  def sync_out(tree, board_id) do
+    with {:ok, %{token: token}} <- Miro.read_creds(),
+         :ok <- Miro.delete_all_nodes(token, board_id) do
+      finish(board_id, create_tree(token, board_id, tree))
+    end
+  end
+
+  # 按有序 ops 在 board 上建节点，维护 ez_id↔miro_id 映射（子节点带父 miro_id）。
+  defp create_tree(token, board_id, tree) do
+    tree
+    |> tree_to_ops()
+    |> Enum.reduce({%{}, []}, fn op, {map, errs} ->
+      parent_miro = op.parent_ez_id && Map.get(map, op.parent_ez_id)
+
+      case Miro.create_node(token, board_id, op.content, parent_miro) do
+        {:ok, miro_id} -> {Map.put(map, op.ez_id, miro_id), errs}
+        {:error, e} -> {map, [{op.ez_id, e} | errs]}
+      end
+    end)
+  end
+
+  defp finish(board_id, {mapping, errors}) do
+    result = %{board_id: board_id, mapping: mapping, errors: Enum.reverse(errors)}
+    if errors == [], do: {:ok, result}, else: {:error, result}
   end
 end
