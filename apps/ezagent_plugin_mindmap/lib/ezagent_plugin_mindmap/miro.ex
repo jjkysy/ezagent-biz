@@ -87,6 +87,10 @@ defmodule EzagentPluginMindmap.Miro do
     end
   end
 
+  @doc "删整块 Miro 板（ezagent 删 mindmap 时联动拆镜像）。"
+  @spec delete_board(String.t(), miro_id()) :: :ok | {:error, term()}
+  def delete_board(token, board_id), do: delete(token, "/v2/boards/#{board_id}")
+
   @doc "删板上所有 mind-map 节点（复用同板前先清空）。"
   @spec delete_all_nodes(String.t(), miro_id()) :: :ok | {:error, term()}
   def delete_all_nodes(token, board_id) do
@@ -105,7 +109,7 @@ defmodule EzagentPluginMindmap.Miro do
   # `{:body_format, :binary}`：让 :httpc 把 body 返成 binary，不是 charlist——
   # 否则 to_string(字节列表) 会把每字节当码点再编码一遍 = UTF-8 双重编码（中文乱码）。
   @http_opts [{:body_format, :binary}]
-  @http_http_opts [{:timeout, 15_000}, {:connect_timeout, 10_000}]
+  @http_http_opts [{:timeout, 30_000}, {:connect_timeout, 15_000}]
 
   defp post(token, path, payload) do
     body = Jason.encode!(payload)
@@ -141,7 +145,7 @@ defmodule EzagentPluginMindmap.Miro do
   defp delete(token, path) do
     request = {String.to_charlist(@api <> path), auth_headers(token)}
 
-    case :httpc.request(:delete, request, [{:timeout, 15_000}, {:connect_timeout, 10_000}], []) do
+    case :httpc.request(:delete, request, @http_http_opts, []) do
       # 404 也算成功：删除是幂等的，节点已不在 = 已达目标状态（父节点删除会
       # 级联删子节点，随后再删那个子节点就会 404）。
       {:ok, {{_, code, _}, _, _}} when code in [200, 204, 404] ->

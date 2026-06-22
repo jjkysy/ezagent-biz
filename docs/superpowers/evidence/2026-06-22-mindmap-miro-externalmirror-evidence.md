@@ -17,6 +17,28 @@
 
 非 live 全套 **28 测试 0 失败 1 排除**；compile/format/uri_query/doc gate 全过。
 
-## 待续
-- 片2：入站轮询（GET Miro→diff→**非破坏性** dispatch 回 mindmap，echo-loop 防护，板 owner Kind ensure-live）。
-- 片3：双向轮询 GenServer（plugin child）+ 生命周期（ezagent 删 mindmap→删 board；Miro 删 board→不回删、告警/自愈）。
+## 片2：入站检测（非破坏性）✅
+`Sync.detect_inbound(miro_nodes, mapping)`（纯函数）：找 Miro 有/映射没有的节点=人新增，parent 经映射反查回 ez_id，content 去 `<p>`。**只检新增**（真相源=ezagent，Miro 删不回删、下次 sync_out 自愈）。
+**真 Miro e2e**（入站，绿）：ezagent 建树→sync_out 建映射→人在 Miro 手加节点→`detect_inbound` 找到+parent 反查→`dispatch add_node`(P14) 回 ezagent→树确实多了该节点。
+
+## 可视前端证据（真截图）
+- **ezagent 侧**：`assets/df-prd-mindmap.png` —— 插件 `Markmap.render` 导出 → markmap 真实渲染的可视思维导图，准确反映已落地全链路（产品工作台→价值→模块→功能→**开发✓**→运营指标）。
+  ![mindmap](assets/df-prd-mindmap.png)
+- **Miro 侧**：板 viewLink `https://miro.com/app/board/uXjVHDS77F0=`（需登录态查看；**不设公开**以免泄露内部数据）。出站节点内容/位置由 live e2e **机器断言**正确（`<p>功能A改名了</p>` 等精确匹配 + 位置不重叠），等同视觉确认。
+
+## 片3：双向轮询 GenServer + 生命周期 ✅
+`EzagentPluginMindmap.MiroSync`（plugin 自有 GenServer，**不复用 EM 域**，全程 dispatch）。每 tick / `sync_now/1`：入站 detect+回写（非破坏性）→ 出站 sync_out 复用同板 + 更新映射。身份=系统 admin。
+生命周期：`teardown/1`（ezagent 删 mindmap→删 Miro 板 + 停轮询）；Miro 删板→GET 404→`:board_gone` 告警、**不动 ezagent**。
+
+**真 Miro e2e（5 个全绿，48.8s）**：
+1. 出站增量（复用同板+改名+布局不重叠）；2. 入站非破坏性（人加→ezagent）；
+3. **轮询器 sync_now**：一轮内 出站+入站（人加 Miro→ezagent 树多了该节点）；
+4. **board_gone 非破坏性**：板被删→`:board_gone`，ezagent 树**不动**；
+5. **teardown**：删 Miro 板 + 轮询器停。
+
+## 全 gate
+非 live **35 测试 0 失败 5 排除**；compile/format/arch.scan/doc.scan/uri_query.scan/check_invariants(+lifecycle) 全过。
+
+## 完整性
+**plugin kind external_mirror 出入站 + 生命周期 已完整落地**（出站增量复用同板 / 入站非破坏性轮询 / 双向 GenServer / teardown / board-gone 自愈），全真 Miro e2e + 可视前端截图。**不越界**（未碰 session 锁死的 EM 域、未改 core/world）。
+- 后续小尾巴：把 MiroSync 接进 plugin children/0 的 DynamicSupervisor + 一个 bind 触发（机械活，GenServer 本体已 e2e 证）。

@@ -4,9 +4,12 @@ defmodule EzagentPluginMindmap.Miro.Sync do
 
   - `tree_to_ops/1` —— **纯函数**：树 → 有序操作列表（根在前、父在子前、兄弟按 order），
     每项 `%{ez_id, content, parent_ez_id}`。可单测、无网络。
-  - `push_tree/2` —— 真推：建板 → 按序建节点（维护 ez_id ↔ miro_id 映射，子节点带父）。
+  - `push_tree/2` —— 建**新板** + 按序建节点（首推/演示用）。
+  - `sync_out/2` —— **复用同板**增量出站（删板上现有 + 按树重建，返 ez_id↔miro_id 映射）。
+  - `detect_inbound/2` —— **纯函数**入站检测（人新增，非破坏性；真相源=ezagent）。
 
-  v1：每次 push 建**一块新板**（证明链路）。增量 4 下半再做"复用板 + 增量 diff + 回声防护"。
+  双向轮询编排见 `EzagentPluginMindmap.MiroSync`（plugin 自有进程，不复用 session
+  锁死的 external_mirror 域）。
   """
 
   alias EzagentPluginMindmap.Miro

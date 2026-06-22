@@ -108,6 +108,72 @@ defmodule EzagentPluginMindmap.MiroLiveTest do
     assert "人在Miro加的" in titles
   end
 
+  describe "MiroSync 双向轮询器 + 生命周期" do
+    setup do
+      :ok = Ecto.Adapters.SQL.Sandbox.checkout(EzagentCore.Repo)
+      Ecto.Adapters.SQL.Sandbox.mode(EzagentCore.Repo, {:shared, self()})
+      uri = Ezagent.URI.new!("entity://system/mindmap/poll-#{System.unique_integer([:positive])}")
+      {:ok, _} = Ezagent.Kind.Server.start_link({EzagentPluginMindmap.Mindmap, %{uri: uri}})
+      :ok = wait_ready(uri)
+
+      %{
+        uri: uri,
+        admin:
+          {Ezagent.URI.new!("entity://system/user/admin"),
+           MapSet.new([Ezagent.Capability.admin_genesis_cap()])}
+      }
+    end
+
+    test "sync_now：一轮内 出站(ezagent→Miro) + 入站(人加→ezagent)", ctx do
+      %{board: board, token: token, uri: uri, admin: admin} = ctx
+      assert {:ok, %{id: _}} = dispatch(uri, "add_node", %{parent_id: "", title: "轮询根"}, admin)
+
+      {:ok, poller} =
+        EzagentPluginMindmap.MiroSync.start_link(uri: uri, board_id: board, interval: 0)
+
+      # 第一轮：纯出站（无人加）
+      assert {:ok, %{inbound: 0}} = EzagentPluginMindmap.MiroSync.sync_now(poller)
+      {:ok, n1} = Miro.get_nodes(token, board)
+      assert Enum.any?(contents(n1), &(&1 == "<p>轮询根</p>"))
+      root_miro = Enum.find(n1, &get_in(&1, ["data", "isRoot"]))["id"]
+
+      # 人在 Miro 手加 → 第二轮：入站 detect+回写 + 出站重建
+      assert {:ok, _} = Miro.create_node(token, board, "<p>轮询入站</p>", root_miro)
+      assert {:ok, %{inbound: 1}} = EzagentPluginMindmap.MiroSync.sync_now(poller)
+      {:ok, %{tree: %{nodes: nodes}}} = dispatch(uri, "get_tree", %{}, admin)
+      assert "轮询入站" in (nodes |> Map.values() |> Enum.map(& &1.title))
+    end
+
+    test "board_gone 非破坏性：板被删 → :board_gone，ezagent 树不动", ctx do
+      %{token: token, uri: uri, admin: admin} = ctx
+      assert {:ok, %{id: _}} = dispatch(uri, "add_node", %{parent_id: "", title: "保留根"}, admin)
+      # 造一块板再删掉 → 确定性 404
+      {:ok, gone} = Miro.create_board(token, "gone-test")
+      :ok = Miro.delete_board(token, gone)
+
+      {:ok, poller} =
+        EzagentPluginMindmap.MiroSync.start_link(uri: uri, board_id: gone, interval: 0)
+
+      assert {:error, :board_gone} = EzagentPluginMindmap.MiroSync.sync_now(poller)
+      # ezagent 真相源未被破坏
+      {:ok, %{tree: %{nodes: nodes}}} = dispatch(uri, "get_tree", %{}, admin)
+      assert "保留根" in (nodes |> Map.values() |> Enum.map(& &1.title))
+    end
+
+    test "teardown：ezagent 删 mindmap → 联动删 Miro 板", ctx do
+      %{token: token, uri: uri} = ctx
+      {:ok, throwaway} = Miro.create_board(token, "teardown-test")
+
+      {:ok, poller} =
+        EzagentPluginMindmap.MiroSync.start_link(uri: uri, board_id: throwaway, interval: 0)
+
+      assert :ok = EzagentPluginMindmap.MiroSync.teardown(poller)
+      refute Process.alive?(poller)
+      # 板已删：GET → 404
+      assert {:error, {:http_status, 404, _}} = Miro.get_nodes(token, throwaway)
+    end
+  end
+
   defp dispatch(uri, action, args, {caller, caps}) do
     target = Ezagent.URI.new!("#{URI.to_string(uri)}?action=mindmap.#{action}")
 
