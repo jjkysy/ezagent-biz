@@ -55,4 +55,12 @@ defmodule EzagentPluginMindmap.Application do
       {DynamicSupervisor, name: EzagentPluginMindmap.InstanceSupervisor, strategy: :one_for_one}
     ]
   end
+
+  # A-lite：给 mindmap 一个 UI 入口。`:route` 指向 world 的通用 auto_derive 页，
+  # 在 /plugins 里显示「思维导图」链接 → 列出/查看 mindmap 实例（`type_name: :mindmap`）。
+  # 富编辑（建树/加节点/推 Miro）留作自定义页后续。
+  @impl Ezagent.Plugin
+  def config_surface do
+    %{kind: :route, path: "/plugins/auto/mindmap", label: "思维导图"}
+  end
 end
