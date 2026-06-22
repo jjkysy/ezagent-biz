@@ -23,7 +23,8 @@ defmodule EzagentPluginMindmap.MixProject do
       mod: {EzagentPluginMindmap.Application, []},
       # Names the plugin contract module for the :ezagent_plugin_check gate.
       env: [ezagent_plugin: EzagentPluginMindmap.Application],
-      extra_applications: [:logger]
+      # :inets/:ssl/:crypto for the Miro REST client (:httpc, mirrors feishu).
+      extra_applications: [:logger, :inets, :ssl, :crypto]
     ]
   end
 
@@ -32,7 +33,9 @@ defmodule EzagentPluginMindmap.MixProject do
 
   defp deps do
     [
-      {:ezagent_core, in_umbrella: true}
+      {:ezagent_core, in_umbrella: true},
+      # Miro REST client JSON encode/decode（飞书也用，:httpc + Jason 不引重依赖）。
+      {:jason, "~> 1.2"}
     ]
   end
 end
