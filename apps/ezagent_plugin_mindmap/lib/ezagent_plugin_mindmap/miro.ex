@@ -17,7 +17,6 @@ defmodule EzagentPluginMindmap.Miro do
   """
 
   @api "https://api.miro.com"
-  @cred_uri "system://credentials/miro.yaml"
 
   @typedoc "Miro 节点 id（字符串）"
   @type miro_id :: String.t()
@@ -25,7 +24,9 @@ defmodule EzagentPluginMindmap.Miro do
   @doc "从 miro.yaml 读凭证。返回 `{:ok, %{token, board_id}}`（board_id 可能 nil）。"
   @spec read_creds() :: {:ok, %{token: String.t(), board_id: String.t() | nil}} | {:error, term()}
   def read_creds do
-    case Ezagent.System.FsResolver.read_yaml(Ezagent.URI.new!(@cred_uri)) do
+    # 运行时从段构造（sanctioned，过 uri_query.scan）；不在模块属性建——编译期
+    # SchemeRegistry 还没注册，`URI.new!` 会崩。
+    case Ezagent.System.FsResolver.read_yaml(Ezagent.URI.system("credentials", "miro.yaml")) do
       {:ok, %{"access_token" => token} = m} when is_binary(token) and token != "" ->
         {:ok, %{token: token, board_id: blank_to_nil(Map.get(m, "board_id"))}}
 
