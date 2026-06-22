@@ -1,6 +1,6 @@
 # 09 · 如何用 ezagent 搭建一个新 app / 产品
 
-> 基于上游最新 main（`e2abc02f`）。给"想用这套技术做产品"的人。
+> 基于上游最新 main（`b6818123`）。给"想用这套技术做产品"的人。
 > 先读 [00 总览](./00-总览.md) 和 [08 socialware 深入](./08-socialware深入.md)。
 
 ## 先分清楚：你要"扩展平台能力"还是"做一个面向客户的产品"
@@ -21,7 +21,7 @@ ezagent 上"搭新东西"有两条**完全不同**的路，别混：
 
 ## 路 A · 写一个 plugin（加平台能力）
 
-核心是**声明式**：你写一个 OTP app，`use Ezagent.Plugin`，在 `start/2` 里 `Ezagent.Plugin.boot(__MODULE__)`，然后只填一组**声明回调**，框架替你做所有注册——你**绝不碰** registry，编译期 `:ezagent_plugin_check` 强制这条规矩（参见 [05 插件层](./05-插件层.md)）。
+核心是**声明式**：你写一个 OTP app，`use Ezagent.Plugin`，在 `start/2` 里 `Ezagent.Plugin.boot(__MODULE__)`，然后只填一组**声明回调**，框架替你做所有注册——你**绝不碰** registry，编译期 `:ezagent_plugin_check` 强制这条规矩（参见 [03 插件与传输层](./03-插件与传输层.md)）。
 
 要填的声明回调（按需）：
 - `plugin_info/0` — 元信息
@@ -36,7 +36,7 @@ ezagent 上"搭新东西"有两条**完全不同**的路，别混：
 - 加一个新的**入站渠道**（像飞书那样把外部消息接进来）→ 抄 `apps/ezagent_plugin_feishu/`：入站走 `InboundDispatcher` → `Invocation.dispatch`（`mode: :call`），出站写一个 `ExternalMirror.Adapter`。
 - 加一个跑命令行 agent（像 cc/codex）→ 抄 `apps/ezagent_plugin_cc/`（PTY + agent_bridge）。
 
-**铁律**（[01 core](./01-core-框架层.md) 的 P14）：跨 Kind 的唯一通路是 `Ezagent.Invocation.dispatch/1`，不许 `PubSub.broadcast` 到入站 topic；消息没人接收要有显式去处（死信队列/遥测），不能静默丢。
+**铁律**（[01 核心框架层](./01-核心框架层.md) 的 P14）：跨 Kind 的唯一通路是 `Ezagent.Invocation.dispatch/1`，不许 `PubSub.broadcast` 到入站 topic；消息没人接收要有显式去处（死信队列/遥测），不能静默丢。
 
 ---
 
@@ -69,7 +69,7 @@ session_uri = Ezagent.URI.new!("session://team-alpha/default/my-app-1")
 匿名访客打开 `/socialware/chat?session_uri=<session_uri>`，平台自动铸匿名用户、下 cookie、加入会话、返回客户端 SPA。
 
 ### 客户看到的界面是 agent 生成的
-不是你写页面，是会话的**编排器 agent** 一轮轮组合出 React + json-render 的界面。"产品设计"在这条路上很大程度是**设计编排器怎么编排**（用什么 agent、什么规则、什么模板）——这正是在建的 **agent-schema** 要规范的东西。
+不是你写页面，是会话的**编排器 agent** 一轮轮组合出 React + json-render 的界面。"产品设计"在这条路上很大程度是**设计编排器怎么编排**（用什么 agent、什么规则、什么模板）——这正是**已落地**的 **agent-schema / agent-contract** 在规范的东西：一份声明式 `Ezagent.AgentManifest`（`apps/ezagent_core/lib/ezagent/agent_manifest.ex`）就能 spawn 出成员 agent，编排器用 `:participant` 工具把它招进会话。
 
 ---
 
@@ -102,8 +102,8 @@ curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:4030/assets/js/custome
 ---
 
 ## 产品方向（决定你这条产品线往哪走）
-- **world** = 正在建的**统一前端**，会退役 LiveView 管理面、最终也收编客户面 → 这就是"统一的 ezagent app/出口"。`public_view` 勾选框、真正的"建 socialware app" UX 会落在 world。
-- **agent-schema** = 编排契约，定义客户体验怎么被 agent 编排出来。
+- **world** = **已落地**的**统一前端**（`apps/ezagent_plugin_world`，React/shadcn + Vite 跑在一层 LiveView 通信壳上），已**复刻并退役**了原 LiveView 管理面（`apps/ezagent_plugin_liveview` 已物理删除）。它现在就是运营/作者面，`public_view` 勾选框、"建 socialware app" 的作者 UX 已经在 world 里。**注意边界**：world 目前只接管运营/作者面，**客户面**（`/socialware/chat`、`/socialware/customer`）**仍在旧栈** `ezagent_web` 上没动 —— "world 收编客户面"仍是 future。
+- **agent-schema / agent-contract** = **已落地**的编排契约（`apps/ezagent_core/lib/ezagent/agent_manifest.ex`）：声明式 manifest（soul/skills/tools/caps/executor）+ 每 flavor 的 `flavor.compile`（纯渲染）+ `executor` 后端 fallback（cc→codex→curl，spawn 期 fail-closed）+ dispatch 撑起的 `tools[]`（`:action`/`:participant`，CapBAC 用空 ctx.caps）+ 复用不可变 `@hash` 的版本钉（`Ezagent.TemplateTags`）+ 账本追踪可恢复的 `migrate_session`。它定义客户体验里的 **agent 零件怎么被声明、换后端、版本化、迁移**。
 - **loom / autoservice** = 只是设计词汇，**没进代码**，别当已有实现。
 
-> 所以你这条产品设计线，落点很可能是：**在 socialware 这套底座 + 在建的 world/agent-schema 方向上，设计一个新的统一客户出口和它的编排工作流**，而不是去改底层或搬旧的 autoservice/loom。
+> 所以你这条产品设计线，落点很可能是：**在 socialware 这套底座 + 已落地的 world/agent-schema 底座上，设计一个新的统一客户出口和它的编排工作流**，而不是去改底层或搬旧的 autoservice/loom。

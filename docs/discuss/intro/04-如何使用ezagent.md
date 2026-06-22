@@ -1,6 +1,6 @@
 # 04 · 如何使用 ezagent（手把手 e2e 走查）
 
-> 上游最新 main（`e2abc02f`）。每步给"做法 + 验证"。
+> 上游最新 main（`b6818123`）。每步给"做法 + 验证"。
 > 标 ✅ 的是本会话**真跑过**的结果（echo / curl-deepseek / cc-claude 三种 agent 都实测通过）。
 > 工具链 = mise（Elixir 1.18.4 / OTP 27），命令都在 worktree 根、加 `mise exec --` 前缀。服务端口 **10042**（不是老 README 的 4000）。
 
@@ -54,13 +54,13 @@ mise exec -- mix ezagent --help     # 命令从 BehaviorRegistry 自动派生(�
 ```
 
 ## ⚠️ 已知坑（这版前端）
-- LiveView 管理面有一批确定性测试失败（前端版本兼容/测试基础设施问题，**非产品功能坏**）。实际表现：**部分按钮/页面坏**（如"new agent"按钮不跳转、session 的 invite 按钮不灵、`/plugins/auto/...` 页报 :not_found）。
-- 绕开办法：用 HTTP API（`POST /api/v1/:kind/:action`，带 `Authorization: Bearer <token>` + `X-Ezagent-Entity-URI` 两个头；token 用 `mix ezagent.user.token <uri> --mint` 铸），或在服务节点内用 iex/RPC 直接 dispatch。
-- world 这条线在建、会退役并替换这套 LiveView 管理面（见 [08 socialware 深入](./08-socialware深入.md) 的 Future）。
+- 现行管理面是 **world**（统一 React+shadcn 前端，挂在 `host: "world."`），它已**复刻并取代**了原来的 LiveView 管理面（`apps/ezagent_plugin_liveview` 已物理删除，LV→world parity 迁移已 100% 完成、零遗留）。下面凡是历史文档里讲"LiveView 管理面"的，主语现在都是 world。
+- 前端仍有一批确定性测试失败（前端版本兼容/测试基础设施问题，**非产品功能坏**，以新 bootstrap 产物为准）。万一某个页面/按钮不灵，绕开办法不变：用 HTTP API（`POST /api/v1/:kind/:action`，带 `Authorization: Bearer <token>` + `X-Ezagent-Entity-URI` 两个头；token 用 `mix ezagent.user.token <uri> --mint` 铸），或在服务节点内用 iex/RPC 直接 dispatch。
+- 注意：world 目前只接管**运营/作者面**；客户面（`/socialware/chat`、`/socialware/customer`）仍在旧栈 `ezagent_web`，"world 收编客户面"仍是 future（见 [08 socialware 深入](./08-socialware深入.md)）。
 
 ## 跑测试
 ```bash
-mise exec -- mix test       # 4700+ 测试；当前不是全绿(前端那批确定性失败)，详见 bootstrap 产物
+mise exec -- mix test       # 4700+ 测试；当前不是全绿(world 前端那批确定性失败)，详见 bootstrap 产物
 ```
 
 ## 搭一个真正的客户产品？

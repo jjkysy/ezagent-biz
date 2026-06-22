@@ -1,6 +1,6 @@
 # 08 · socialware 深入（这个技术最关键的产品概念）
 
-> 基于上游最新 main（`e2abc02f`，2026-06-21）+ 上游刚加的权威 skill `.claude/skills/ezagent-socialware/SKILL.md`。
+> 基于上游最新 main（`b6818123`，2026-06-22）+ 上游刚加的权威 skill `.claude/skills/ezagent-socialware/SKILL.md`。
 > 这一篇专门把 socialware 讲透——它是"用 ezagent 做面向客户的产品"的核心。
 
 ## 一句话：socialware 就是"把一个会话公开出去，让外面的陌生人也能看、能进"
@@ -32,7 +32,7 @@ ezagent 平时的会话是给**注册的操作员**（运营/管理员/agent）�
 
 （控制器在 `apps/ezagent_web/lib/ezagent_web/controllers/socialware/`。）
 
-**关键**：客户看到的界面是 **agent 动态生成的**（由会话的编排器 agent 一轮一轮组合出来，React + json-render），**不是手写的 HEEx 页面**。运营/管理员那套手写界面（今天是 LiveView）是另一回事。
+**关键**：客户看到的界面是 **agent 动态生成的**（由会话的编排器 agent 一轮一轮组合出来，React + json-render），**不是手写的 HEEx 页面**。运营/管理员那套界面（今天是 world）是另一回事。
 
 ## 匿名访问生命周期（自动的，你基本不用碰）
 
@@ -47,7 +47,7 @@ ezagent 平时的会话是给**注册的操作员**（运营/管理员/agent）�
 ## 几个会浪费你时间的坑（skill 里血泪总结）
 
 1. **`public_view?/1` 读的是"活会话"的 slice**：一个带 `public_view` 的会话如果当前没在服务节点里活着，门控就过不了，访客被踢去 `/login`（302）。正常产品流程里会话是在管理界面"当场"建的所以是活的；如果你在另一个进程里种了会话再启动服务，服务看不到它 → 302。
-2. **`public_view` 没有界面开关**：现在只能通过模板内容/CLI JSON 设，LiveView 管理界面和 world 里都还没有勾选框（world 会加）。
+2. **`public_view` 是模板级开关，没有 per-session 开关**：world 已在「Session templates」面板提供「Public socialware app」勾选框（保存时 dispatch `Ezagent.World.WorkspacePluginActions.save_session_template/2` → `SessionTemplate.create/3` 写 `public_view: true`）；也可继续走模板内容/CLI JSON 设。注意它在**模板**上设，world 的「New session」表单不暴露这个标志——会话从所选模板继承。
 3. **客户端 SPA 必须先 build**：`/socialware/chat` 加载 `customer_app.js` + `customer.css`，依赖在 `apps/ezagent_web/assets/package.json`（react/react-dom/sandpack），`node_modules` 没装的话页面是 HTTP 200 但**空白**。修：`cd apps/ezagent_web/assets && pnpm install` → `mix assets.build` → 刷新。
 
 ## 怎么验证一个 socialware app（本地 E2E）
@@ -61,11 +61,12 @@ ezagent 平时的会话是给**注册的操作员**（运营/管理员/agent）�
 - `ChatFeedController` / `CustomerController` —— 两个公开面。
 - `Ezagent.Socialware.{AnonUser, AnonBinding, ChatFeed, CustomerFeed}` —— 匿名生命周期 + feed 投影。
 - `EzagentWeb.Socialware.{AnonCookie, AnonTakeover}` —— 签名 cookie + 匿名→登录合并。
+- `EzagentPluginWorld.WorldLive` + `Ezagent.World.WorkspacePluginActions` —— world 作者面（`save_session_template/2` 写 `public_view`）。
 
-## 产品方向：world + agent-schema（还没进 main，别当已有）
-上游 skill 明确写了两条在建的线，会把 socialware "产品化"：
-- **world** —— 新的**统一 ezagent 前端**。第一目标是复刻并退役管理端 LiveView 插件（运营/作者面，`public_view` 勾选框和真正的"建 socialware app"作者 UX 会落在这），但范围更大：**最终也会吃掉对外/客户面**。所以今天 `/socialware/chat` 这套 React 客户端 SPA 是过渡形态。→ **这就是你说的"统一的 ezagent app / 统一出口"的方向。**
-- **agent-schema** —— 一份规范，定义 autoservice 式后端服务怎么被编排（编排器 agent 怎么组合出客户体验）。
+## 产品方向：world + agent-schema（已落地 main，#882）
+之前列为"在建"的两条线现在**都已落到 main**，socialware skill 也同步标成"landed on main"：
+- **world** —— **已落地**的统一 ezagent 前端（React/shadcn + Vite，跑在一层只做 SSR/通信壳的 LiveView `WorldLive` 上、用 `phx-hook="WorldRenderer"` 注水 TSX islands），挂在 `host: "world."`。它已**复刻并退役**了原管理端 LiveView 插件（`apps/ezagent_plugin_liveview` 已物理删除），运营/作者面现在就是 world——`public_view` 勾选框和"建 socialware app"作者 UX 都已在这里（见上文坑 #2）。**注意边界**：world 目前只接管运营/作者面；**对外/客户面**（`/socialware/chat`、`/socialware/customer`）**仍在旧栈** `ezagent_web` + `ezagent_domain_socialware` 上没动，本篇前面所有客户面描述（React + json-render SPA、两个公开面控制器）依旧成立。"world 最终也吃掉客户面"这件事**仍是 future**（skill §Future 还没做）。
+- **agent-schema（= agent-contract）** —— **已落地**的 agent 声明契约：`Ezagent.AgentManifest`（schema + loader + slot render，`apps/ezagent_core/lib/ezagent/agent_manifest.ex`）+ 每 flavor 的 `flavor.compile`（纯渲染、泛化 SoulRenderer）+ `executor` 后端 fallback（spawn 期、fail-closed）+ dispatch 撑起的 `tools[]`（`:action`/`:participant`，CapBAC 用空 `ctx.caps`，`apps/ezagent_core/lib/ezagent/agent_manifest/tools.ex`）+ 复用不可变 `@hash` pin 的 adopt-on-create + 账本追踪可恢复的 `migrate_session`（CLI 门面 `apps/ezagent_cli/lib/ezagent_cli/agent_manifest_facade.ex`）。它定义编排器 agent 怎么把后端服务组合出客户体验。
 
-> ⚠️ **loom** 和 **autoservice** 是"仅供参考的设计词汇"，**没合进代码**，别当成已有实现引用。
-> world + 当前 main + agent-schema 合起来才是完整的 socialware 产品：world 当作者面和客户面唯一前端，agent-schema 当背后的编排契约。
+> ⚠️ **loom** 和 **autoservice** 仍是"仅供参考的设计词汇"，**没合进代码**，别当成已有实现引用。
+> world（已是运营/作者面唯一前端，未来收编客户面）+ agent-contract（编排契约）合起来就是 socialware 产品化的底座。
