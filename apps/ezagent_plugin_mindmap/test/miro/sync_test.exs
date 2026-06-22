@@ -45,4 +45,38 @@ defmodule EzagentPluginMindmap.Miro.SyncTest do
       assert parent_idx < self_idx
     end
   end
+
+  describe "detect_inbound（入站：只检人新增，非破坏性）" do
+    defp mnode(id, content, parent_miro \\ nil) do
+      base = %{"id" => id, "data" => %{"nodeView" => %{"data" => %{"content" => content}}}}
+
+      if parent_miro,
+        do: Map.put(base, "parent", %{"id" => parent_miro}),
+        else: put_in(base, ["data", "isRoot"], true)
+    end
+
+    test "Miro 有、映射没有 = 人新增；parent 反查回 ez_id，content 去 <p>" do
+      mapping = %{"n1" => "miro_root", "n2" => "miro_child"}
+
+      miro_nodes = [
+        mnode("miro_root", "<p>根</p>"),
+        mnode("miro_child", "<p>子</p>", "miro_root"),
+        mnode("miro_new", "<p>人加的</p>", "miro_root")
+      ]
+
+      assert [%{miro_id: "miro_new", content: "人加的", parent_ez_id: "n1"}] =
+               Sync.detect_inbound(miro_nodes, mapping)
+    end
+
+    test "Miro 删了节点 → 不产 delete op（真相源=ezagent，非破坏性）" do
+      mapping = %{"n1" => "miro_root", "n2" => "miro_gone"}
+      # Miro 里只剩 root（miro_gone 被人删了）
+      assert Sync.detect_inbound([mnode("miro_root", "<p>根</p>")], mapping) == []
+    end
+
+    test "人新加的根级节点（无 parent）→ parent_ez_id nil" do
+      assert [%{parent_ez_id: nil, content: "X"}] =
+               Sync.detect_inbound([mnode("miro_x", "<p>X</p>")], %{"n1" => "miro_root"})
+    end
+  end
 end
