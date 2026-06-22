@@ -8,6 +8,7 @@ import {Conversation, type ConversationState} from "./components/Conversation"
 import {IdentitiesSurface, type IdentitiesState} from "./components/Identities"
 import {LayoutEditor} from "./components/LayoutEditor"
 import {PtyTerminalSurface} from "./components/PtyTerminal"
+import {Mindmap} from "./components/Mindmap"
 import {SessionsTable} from "./components/SessionsTable"
 import {WorldHello} from "./components/WorldHello"
 import {WorkspacePluginSurface, type WorkspacePluginState} from "./components/WorkspacePlugin"
@@ -480,6 +481,16 @@ function renderLayoutComponent(component: NonNullable<WorldLayout["components"]>
     case "workspace_plugins":
       return (
         <WorkspacePluginSurface
+          key={component.id}
+          state={{...context.state, component: component.type}}
+          onAction={context.onWorkspacePluginAction}
+        />
+      )
+
+    case "mindmap":
+      // mindmap 操作面（df-tech 新增 surface）：复用 onWorkspacePluginAction 透传 world:dispatch。
+      return (
+        <Mindmap
           key={component.id}
           state={{...context.state, component: component.type}}
           onAction={context.onWorkspacePluginAction}

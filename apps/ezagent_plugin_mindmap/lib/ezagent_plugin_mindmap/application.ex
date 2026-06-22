@@ -67,11 +67,10 @@ defmodule EzagentPluginMindmap.Application do
     ]
   end
 
-  # A-lite：给 mindmap 一个 UI 入口。`:route` 指向 world 的通用 auto_derive 页，
-  # 在 /plugins 里显示「思维导图」链接 → 列出/查看 mindmap 实例（`type_name: :mindmap`）。
-  # 富编辑（建树/加节点/推 Miro）留作自定义页后续。
+  # mindmap 专属操作面（df-tech）：`/plugins/mindmap` —— 在 world 里建树/认领/改状态/
+  # 挂产物/设指标/一键推 Miro（前端 `components/Mindmap.tsx` + `world/mindmap_{data,actions}.ex`）。
   @impl Ezagent.Plugin
   def config_surface do
-    %{kind: :route, path: "/plugins/auto/mindmap", label: "思维导图"}
+    %{kind: :route, path: "/plugins/mindmap", label: "思维导图"}
   end
 end

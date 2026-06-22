@@ -231,6 +231,12 @@ defmodule EzagentPluginWorld.WorldLive do
     ConversationActions.handle_dispatch(socket, action, args)
   end
 
+  @mindmap_actions ~w(mindmap.add_node mindmap.rename_node mindmap.move_node mindmap.remove_node mindmap.set_stage mindmap.claim_node mindmap.unclaim_node mindmap.set_status mindmap.attach_artifact mindmap.detach_artifact mindmap.set_metric mindmap.create mindmap.sync_miro)
+  def handle_event("world:dispatch", %{"action" => action, "args" => args}, socket)
+      when action in @mindmap_actions and is_map(args) do
+    Ezagent.World.MindmapActions.handle_dispatch(socket, action, args)
+  end
+
   def handle_event("pty_input", %{"bytes" => bytes}, socket) when is_binary(bytes) do
     case socket.assigns.world_state do
       %{"component" => "pty_terminal", "agent_uri" => agent_uri_str} ->
@@ -516,6 +522,18 @@ defmodule EzagentPluginWorld.WorldLive do
     |> put_command_palette(socket)
   end
 
+  defp state_for_route(%{component: "mindmap"} = route, socket, layout) do
+    route
+    |> Ezagent.World.MindmapData.state_for(%{
+      workspace_uri: socket.assigns.current_workspace_uri,
+      caller_uri: socket.assigns.current_entity_uri,
+      caller_caps: Map.get(socket.assigns, :current_caps, MapSet.new())
+    })
+    |> Map.put("layout", layout)
+    |> Map.put("can_manage_layout", false)
+    |> put_command_palette(socket)
+  end
+
   defp state_for_route(%{group: :workspace_plugins} = route, socket, layout) do
     route
     |> Ezagent.World.WorkspacePluginData.state_for(%{
@@ -706,6 +724,27 @@ defmodule EzagentPluginWorld.WorldLive do
           component: "feishu_bindings",
           title: "Feishu Bindings",
           path: path
+        }
+
+      # mindmap 操作面（df-tech 新增 surface）：列表页 + 单个 mindmap 详情页。
+      match = Regex.run(~r{\A/plugins/mindmap/([^/]+)\z}, path) ->
+        [_full, encoded] = match
+
+        %{
+          group: :workspace_plugins,
+          component: "mindmap",
+          title: "思维导图",
+          path: path,
+          entity_uri: parse_any_uri(encoded)
+        }
+
+      path == "/plugins/mindmap" ->
+        %{
+          group: :workspace_plugins,
+          component: "mindmap",
+          title: "思维导图",
+          path: path,
+          entity_uri: nil
         }
 
       match = Regex.run(~r{\A/plugins/auto/([^/]+)/([^/]+)\z}, path) ->

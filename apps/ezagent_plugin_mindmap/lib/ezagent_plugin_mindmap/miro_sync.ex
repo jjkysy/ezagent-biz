@@ -47,6 +47,34 @@ defmodule EzagentPluginMindmap.MiroSync do
   @doc "立刻跑一轮双向同步（`ref` = pid 或 mindmap URI）。`{:ok, %{inbound: n}}` | `{:error, _}`。"
   def sync_now(ref), do: GenServer.call(server(ref), :sync_now, 30_000)
 
+  @doc """
+  一键推 Miro：已绑定则直接 `sync_now`；未绑定则**新建一块板 + bind + sync**。返回
+  `{:ok, %{inbound, board_id}}`——供 world 操作面"推 Miro"按钮（用户不必管 board）。
+  """
+  @spec sync_or_bind(URI.t(), String.t()) :: {:ok, map()} | {:error, term()}
+  def sync_or_bind(uri, board_name) do
+    case board_id(uri) do
+      {:ok, board} ->
+        with {:ok, r} <- sync_now(uri), do: {:ok, Map.put(r, :board_id, board)}
+
+      :not_bound ->
+        with {:ok, %{token: t}} <- Miro.read_creds(),
+             {:ok, board} <- Miro.create_board(t, board_name),
+             {:ok, _} <- bind(uri, board, interval: 0),
+             {:ok, r} <- sync_now(uri) do
+          {:ok, Map.put(r, :board_id, board)}
+        end
+    end
+  end
+
+  @doc "返回某 mindmap 已绑定的 Miro board id，未绑定 `:not_bound`。"
+  @spec board_id(URI.t()) :: {:ok, String.t()} | :not_bound
+  def board_id(uri) do
+    {:ok, GenServer.call(server(uri), :board_id, 30_000)}
+  catch
+    :exit, _ -> :not_bound
+  end
+
   @doc "拆镜像：删 Miro 板 + 停轮询（`ref` = pid 或 mindmap URI）。"
   def teardown(ref), do: GenServer.call(server(ref), :teardown, 30_000)
 
@@ -72,6 +100,8 @@ defmodule EzagentPluginMindmap.MiroSync do
     {result, state} = sync(state)
     {:reply, result, state}
   end
+
+  def handle_call(:board_id, _from, state), do: {:reply, state.board_id, state}
 
   def handle_call(:teardown, _from, state) do
     res =
