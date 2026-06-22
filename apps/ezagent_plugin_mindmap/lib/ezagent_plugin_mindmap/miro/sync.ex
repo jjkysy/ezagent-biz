@@ -26,7 +26,7 @@ defmodule EzagentPluginMindmap.Miro.Sync do
 
   defp walk(id, nodes) do
     node = Map.fetch!(nodes, id)
-    self_op = %{ez_id: id, content: node.title, parent_ez_id: node.parent_id}
+    self_op = %{ez_id: id, content: render_content(node), parent_ez_id: node.parent_id}
 
     children =
       nodes
@@ -35,6 +35,56 @@ defmodule EzagentPluginMindmap.Miro.Sync do
       |> Enum.map(fn {cid, _n} -> cid end)
 
     [self_op | Enum.flat_map(children, fn cid -> walk(cid, nodes) end)]
+  end
+
+  @status_icon %{unassigned: "○", claimed: "◔", doing: "◑", done: "●"}
+
+  @doc """
+  把节点的丰富信息渲染成 Miro 节点的**富文本 label**（status 图标 + `[stage]` 标签 +
+  标题 + `@owner` + 📊metrics + 📎artifacts）。
+
+  ⚠️ Miro REST mindmap create **不支持设节点颜色/样式**（`style.nodeColor`/
+  `nodeView.style.color`/`fillColor` 均 400 "not supported"，配色是 Web SDK 浏览器独有）
+  → 故所有元信息都编进文字 label。**不带外层 `<p>`**（Miro 自动包一层）。
+
+  只对带 `:status`（即真节点模型）的节点富化；老式 `%{title}` 字面只回标题。
+  """
+  @spec render_content(map()) :: String.t()
+  def render_content(%{status: _} = node) do
+    [
+      Map.get(@status_icon, Map.get(node, :status)),
+      stage_tag(Map.get(node, :stage)),
+      html_escape(Map.get(node, :title, "")),
+      owner_tag(Map.get(node, :owner)),
+      metrics_tag(Map.get(node, :metrics, [])),
+      artifacts_tag(Map.get(node, :artifacts, []))
+    ]
+    |> Enum.reject(&(&1 in [nil, ""]))
+    |> Enum.join(" ")
+  end
+
+  def render_content(node), do: html_escape(Map.get(node, :title, ""))
+
+  defp stage_tag(nil), do: ""
+  defp stage_tag(stage), do: "[#{stage}]"
+
+  defp owner_tag(nil), do: ""
+  defp owner_tag(owner), do: "<b>@#{owner |> to_string() |> String.split("/") |> List.last()}</b>"
+
+  defp metrics_tag([]), do: ""
+
+  defp metrics_tag(ms),
+    do: "📊" <> Enum.map_join(ms, ";", fn m -> "#{m.name}:#{m.current || "—"}/#{m.target}" end)
+
+  defp artifacts_tag([]), do: ""
+  defp artifacts_tag(as), do: "📎#{length(as)}"
+
+  defp html_escape(s) do
+    s
+    |> to_string()
+    |> String.replace("&", "&amp;")
+    |> String.replace("<", "&lt;")
+    |> String.replace(">", "&gt;")
   end
 
   @doc """

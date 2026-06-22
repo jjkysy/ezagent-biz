@@ -108,6 +108,43 @@ defmodule EzagentPluginMindmap.MiroLiveTest do
     assert "人在Miro加的" in titles
   end
 
+  test "富格式出站：真节点(认领+状态+指标) → Miro label 含 ◑/[stage]/@owner/📊", %{board: board, token: token} do
+    :ok = Ecto.Adapters.SQL.Sandbox.checkout(EzagentCore.Repo)
+    Ecto.Adapters.SQL.Sandbox.mode(EzagentCore.Repo, {:shared, self()})
+
+    uri = Ezagent.URI.new!("entity://system/mindmap/rich-#{System.unique_integer([:positive])}")
+    {:ok, _} = Ezagent.Kind.Server.start_link({EzagentPluginMindmap.Mindmap, %{uri: uri}})
+    :ok = wait_ready(uri)
+
+    admin =
+      {Ezagent.URI.new!("entity://system/user/admin"),
+       MapSet.new([Ezagent.Capability.admin_genesis_cap()])}
+
+    {:ok, %{id: r}} = dispatch(uri, "add_node", %{parent_id: "", title: "产品"}, admin)
+    {:ok, %{id: c}} = dispatch(uri, "add_node", %{parent_id: r, title: "功能A"}, admin)
+    {:ok, %{}} = dispatch(uri, "set_stage", %{id: c, stage: "dev"}, admin)
+    {:ok, %{}} = dispatch(uri, "claim_node", %{id: c}, admin)
+    {:ok, %{}} = dispatch(uri, "set_status", %{id: c, status: "doing"}, admin)
+
+    {:ok, %{}} =
+      dispatch(
+        uri,
+        "set_metric",
+        %{id: c, metric: %{"name" => "周闭环", "target" => 2, "current" => 1}},
+        admin
+      )
+
+    {:ok, %{tree: %{nodes: nodes, root_id: root}}} = dispatch(uri, "get_tree", %{}, admin)
+    assert {:ok, _} = Sync.sync_out(%{nodes: nodes, root_id: root}, board)
+
+    {:ok, miro} = Miro.get_nodes(token, board)
+    rich = Enum.find(contents(miro), &(&1 =~ "功能A"))
+    assert rich =~ "◑", "status 图标缺失: #{rich}"
+    assert rich =~ "[dev]", "stage 标签缺失: #{rich}"
+    assert rich =~ "@admin", "owner 缺失: #{rich}"
+    assert rich =~ "📊周闭环:1/2", "metric 缺失: #{rich}"
+  end
+
   describe "MiroSync 双向轮询器 + 生命周期" do
     setup do
       :ok = Ecto.Adapters.SQL.Sandbox.checkout(EzagentCore.Repo)
@@ -134,7 +171,7 @@ defmodule EzagentPluginMindmap.MiroLiveTest do
       # 第一轮：纯出站（无人加）
       assert {:ok, %{inbound: 0}} = EzagentPluginMindmap.MiroSync.sync_now(poller)
       {:ok, n1} = Miro.get_nodes(token, board)
-      assert Enum.any?(contents(n1), &(&1 == "<p>轮询根</p>"))
+      assert Enum.any?(contents(n1), &(&1 =~ "轮询根"))
       root_miro = Enum.find(n1, &get_in(&1, ["data", "isRoot"]))["id"]
 
       # 人在 Miro 手加 → 第二轮：入站 detect+回写 + 出站重建
@@ -185,7 +222,7 @@ defmodule EzagentPluginMindmap.MiroLiveTest do
       # 经 uri（Registry 解析）触发同步
       assert {:ok, %{inbound: 0}} = EzagentPluginMindmap.MiroSync.sync_now(uri)
       {:ok, n} = Miro.get_nodes(token, board)
-      assert Enum.any?(contents(n), &(&1 == "<p>bind根</p>"))
+      assert Enum.any?(contents(n), &(&1 =~ "bind根"))
 
       # unbind：删板 + 停轮询
       assert :ok = EzagentPluginMindmap.MiroSync.unbind(uri)

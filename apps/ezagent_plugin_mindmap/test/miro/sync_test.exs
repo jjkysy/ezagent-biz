@@ -79,4 +79,41 @@ defmodule EzagentPluginMindmap.Miro.SyncTest do
                Sync.detect_inbound([mnode("miro_x", "<p>X</p>")], %{"n1" => "miro_root"})
     end
   end
+
+  describe "render_content（节点富文本 label）" do
+    test "真节点：status 图标 + [stage] + 标题 + @owner + 📊metrics + 📎artifacts，不带外层 <p>" do
+      node = %{
+        title: "功能A",
+        stage: :dev,
+        owner: "entity://system/user/alice",
+        status: :doing,
+        metrics: [%{name: "周闭环", target: 2, current: 1, unit: "个"}],
+        artifacts: [%{ref: "#1"}]
+      }
+
+      c = Sync.render_content(node)
+      assert c =~ "◑" and c =~ "[dev]" and c =~ "功能A"
+      assert c =~ "<b>@alice</b>" and c =~ "📊周闭环:1/2" and c =~ "📎1"
+      refute c =~ "<p>"
+    end
+
+    test "未认领节点：○ 图标、无 @owner" do
+      c =
+        Sync.render_content(%{
+          title: "x",
+          stage: :feature,
+          owner: nil,
+          status: :unassigned,
+          metrics: [],
+          artifacts: []
+        })
+
+      assert c =~ "○" and c =~ "[feature]" and c =~ "x"
+      refute c =~ "@"
+    end
+
+    test "老式字面（无 :status）只回标题 + HTML 转义" do
+      assert Sync.render_content(%{title: "a<b>c"}) == "a&lt;b&gt;c"
+    end
+  end
 end

@@ -43,5 +43,10 @@
 ## 全 gate
 非 live **36 测试 0 失败 6 排除** + **6 live 全绿**；compile/format/arch.scan(122)/doc.scan/uri_query.scan/check_invariants(+lifecycle) 全过。
 
+## 片5：富 node 格式表示（出站 label）✅
+`Sync.render_content(node)` 把节点元信息编进 Miro 节点**富文本 label**：status 图标(○◔◑●) + `[stage]` + 标题 + `<b>@owner</b>` + 📊metrics + 📎artifacts。只对真节点（带 `:status`）富化，老式字面回纯标题。
+**⚠️ Miro API 限制（查官方文档+真 token 实测确认）**：REST mindmap create **不支持设节点颜色/样式**（`style.nodeColor`/`nodeView.style.color`/`fillColor` 全 400 "not supported"）——配色是 **Web SDK[浏览器] 独有**实验特性，后端 REST 用不了。**为什么不用 Web SDK**：它在浏览器 iframe 里跑、没法从 ezagent Elixir 后端驱动；ezagent 是后端镜像服务→只能 REST。像素级配色留作"未来 Miro app"。
+**真 Miro e2e**：真节点(认领+`:doing`+`[dev]`+指标) → 推 → Miro label = `◑ [dev] 功能A <b>@admin</b> 📊周闭环:1/2`（机器断言，绿）。render_content 单测 3 例。
+
 ## 完整性
 **plugin kind external_mirror 出入站 + 生命周期 + 监督树接线 已完整落地**（出站增量复用同板 / 入站非破坏性轮询 / 双向 GenServer / bind-unbind / teardown / board-gone 自愈），全真 Miro e2e（6 live）+ 可视前端截图。**不越界**（未碰 session 锁死的 EM 域、未改 core/world）。

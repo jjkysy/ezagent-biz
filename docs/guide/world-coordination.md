@@ -76,6 +76,7 @@ Keep this table current. Before starting world work, add your row; on finishing,
 | world beautification + restructure (#83) | claude (`world-beautify`) | layout/slot system (`layout_manager.ex`, `behavior/layout.ex`, `world_live.ex` route+layout fns, `main.tsx` renderer), then `styles.css`, existing surfaces, design system, `primitives.tsx` + atom layer | ✅ MERGED to main (shadcn/typed-slot) |
 | Agent Console (#84) | agent-console dev | Phase 0: standalone static demo (`apps/ezagent_web/priv/static/agent-console-demo/` + `static_paths` allowlist) — touches NO world files. Phase 1+: new `agent_console` surface + `*_data/*_actions` + `world_live.ex` route clause | Phase 0 demo merged (`#892`) |
 | hello (Phase 0, #81) | TBD | none in world (isolated plugin) | handoff merged |
+| mindmap 操作面 (df-tech) | Sy (df-tech-yao) | **新增** `mindmap` surface：新建 `components/Mindmap.tsx` + `world/mindmap_data.ex` + `world/mindmap_actions.ex`；`world_live.ex` 仅加 route/state/白名单子句（最小）；`main.tsx` 加 render 分支。**不碰** styles.css / primitives / 他人 surface | in progress 2026-06-23 |
 
 ## 6. The checklist every world-touching handoff must include
 
