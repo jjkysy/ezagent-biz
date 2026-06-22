@@ -27,6 +27,9 @@ defmodule EzagentPluginMindmap.Mindmap do
   def behaviors, do: [Ezagent.Behavior.Mindmap]
 
   # Kind.Server 仍读 persistence/0。
+  # 增量 2：durable 持久化——节点树是真相源，必须跨重启存活。对齐
+  # `Ezagent.Entity.Session` 的 `{:snapshot, :on_change}`：state（单一 `:tree` key）
+  # 随每次 `{:set}` 落核心 KindSnapshot，冷启动经 SpawnRegistry rehydrate。
   @doc false
-  def persistence, do: :ephemeral
+  def persistence, do: {:snapshot, :on_change}
 end
