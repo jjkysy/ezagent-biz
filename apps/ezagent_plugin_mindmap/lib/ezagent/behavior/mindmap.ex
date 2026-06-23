@@ -289,18 +289,30 @@ defmodule Ezagent.Behavior.Mindmap do
   # 节点 stage 的链上索引（@stages 顺序即固定链；找不到当 0）。
   defp stage_index(s), do: Enum.find_index(@stages, &(&1 == s)) || 0
 
-  # R1：node.stage ∈ [父 stage, 每个子 stage]——父≤自己≤子，保证整链单调不回退。
+  # R1.1（07 固定接力链）：stage 是结构事实非自由属性，沿固定 9 棒链推进——
+  # 根固定第一棒 :positioning；非根只能是"父棒"或"父棒+1"（不能跳棒、不能回退、不能乱设）；
+  # 对称地，每个子只能是"本棒"或"本棒+1"。这把"随意改 stage"收死成相邻棒推进。
   defp stage_fits?(nodes, id, s) do
     node = nodes[id]
     si = stage_index(s)
 
     parent_ok =
-      node.parent_id == nil or stage_index(nodes[node.parent_id].stage) <= si
+      case node.parent_id do
+        nil ->
+          s == :positioning
+
+        pid ->
+          pi = stage_index(nodes[pid].stage)
+          si == pi or si == pi + 1
+      end
 
     children_ok =
       nodes
       |> Enum.filter(fn {_i, n} -> n.parent_id == id end)
-      |> Enum.all?(fn {_i, c} -> si <= stage_index(c.stage) end)
+      |> Enum.all?(fn {_i, c} ->
+        ci = stage_index(c.stage)
+        ci == si or ci == si + 1
+      end)
 
     parent_ok and children_ok
   end

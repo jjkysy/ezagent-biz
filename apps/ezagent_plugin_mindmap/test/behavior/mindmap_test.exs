@@ -206,26 +206,32 @@ defmodule Ezagent.Behavior.MindmapTest do
   describe "set_stage / import 授权" do
     test "set_stage 改阶段（owner/admin）", %{} do
       {t, _r, c} = seed()
-      assert {:ok, %{}, e} = Mindmap.handle_set_stage(%{id: c, stage: "feature"}, admin_ctx(t))
-      assert committed(e).nodes[c].stage == :feature
+      # c 父=root(positioning)，只能 positioning 或 metric(父+1)
+      assert {:ok, %{}, e} = Mindmap.handle_set_stage(%{id: c, stage: "metric"}, admin_ctx(t))
+      assert committed(e).nodes[c].stage == :metric
 
       assert {:error, {:invalid_stage, "nope"}} =
                Mindmap.handle_set_stage(%{id: c, stage: "nope"}, admin_ctx(t))
     end
 
-    test "set_stage R1 插入规则：issue 后不能插 feature（子 stage 不能早于父）", %{} do
-      {t, _r, c} = seed()
-      {:ok, _, e1} = Mindmap.handle_set_stage(%{id: c, stage: "issue"}, admin_ctx(t))
-      t1 = committed(e1)
-      {:ok, %{id: gc}, e2} = Mindmap.handle_add_node(%{parent_id: c, title: "孙"}, admin_ctx(t1))
-      t2 = committed(e2)
+    test "set_stage R1.1：stage 沿固定链推进（只父棒或父棒+1，根固定 positioning，不能跳棒）", %{} do
+      {t, r, c} = seed()
 
-      # gc 父=c(issue=6)；设 feature(5) < 6 → 拒（issue 后不能插 feature）
-      assert {:error, {:stage_order_violation, "feature"}} =
-               Mindmap.handle_set_stage(%{id: gc, stage: "feature"}, admin_ctx(t2))
+      # 根固定 positioning：设成 metric → 拒
+      assert {:error, {:stage_order_violation, _}} =
+               Mindmap.handle_set_stage(%{id: r, stage: "metric"}, admin_ctx(t))
 
-      # gc 设 pr(8) ≥ 6 → 允许（往后插合法）
-      assert {:ok, %{}, _} = Mindmap.handle_set_stage(%{id: gc, stage: "pr"}, admin_ctx(t2))
+      # 子 c（父 positioning=0）：设 metric(1=父+1) → OK
+      assert {:ok, %{}, e1} = Mindmap.handle_set_stage(%{id: c, stage: "metric"}, admin_ctx(t))
+      assert committed(e1).nodes[c].stage == :metric
+
+      # 子 c：设 pain(2=父+2) → 拒（跳棒）
+      assert {:error, {:stage_order_violation, _}} =
+               Mindmap.handle_set_stage(%{id: c, stage: "pain"}, admin_ctx(t))
+
+      # 子 c：设 issue(6) → 拒（跳棒）
+      assert {:error, {:stage_order_violation, _}} =
+               Mindmap.handle_set_stage(%{id: c, stage: "issue"}, admin_ctx(t))
     end
 
     test "import_markmap 仅 admin", %{} do

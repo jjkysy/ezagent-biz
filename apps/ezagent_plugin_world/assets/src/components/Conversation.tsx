@@ -416,7 +416,11 @@ export function Conversation({
             <Mindmap
               state={state}
               onAction={onMindmapAction}
-              onShare={() => sessionUri && onSend(sessionUri, `${MINDMAP_CARD_TAG} 思维导图`, [])}
+              onShare={() => {
+                if (!sessionUri) return
+                const nm = (state.mindmap_uri || "").split("/").pop()
+                onSend(sessionUri, `${MINDMAP_CARD_TAG} 思维导图${nm ? ` · ${nm}` : ""}`, [])
+              }}
               onShareArtifact={(name, url) => sessionUri && onSend(sessionUri, `${ARTIFACT_CARD_TAG} ${name} ::: ${url}`, [])}
             />
           </div>

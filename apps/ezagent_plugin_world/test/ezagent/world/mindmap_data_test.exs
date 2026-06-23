@@ -19,7 +19,7 @@ defmodule Ezagent.World.MindmapDataTest do
     d = fn action, args -> disp(uri, action, args, caller, caps) end
     {:ok, %{id: "n1"}} = d.(:add_node, %{parent_id: "", title: "根"})
     {:ok, %{id: "n2"}} = d.(:add_node, %{parent_id: "n1", title: "功能"})
-    {:ok, %{}} = d.(:set_stage, %{id: "n2", stage: "feature"})
+    {:ok, %{}} = d.(:set_stage, %{id: "n2", stage: "metric"})
     {:ok, %{}} = d.(:claim_node, %{id: "n2"})
     {:ok, %{}} = d.(:set_status, %{id: "n2", status: "doing"})
 
@@ -32,7 +32,7 @@ defmodule Ezagent.World.MindmapDataTest do
 
     n2 = tree["nodes"]["n2"]
     assert n2["title"] == "功能"
-    assert n2["stage"] == "feature", "atom 应转 string"
+    assert n2["stage"] == "metric", "atom 应转 string"
     assert n2["status"] == "doing"
     assert n2["owner"] == "entity://system/user/admin"
     assert is_list(n2["artifacts"]) and is_list(n2["metrics"])

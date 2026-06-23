@@ -2,7 +2,7 @@ import {useEffect, useState} from "react"
 import {ExternalLink, Hand, Paperclip, Pencil, Plus, RefreshCw, Send, Target, Trash2} from "lucide-react"
 
 import {Button} from "./ui/primitives"
-import {MindmapCanvas, STAGE_LABEL, STAGES} from "./MindmapCanvas"
+import {MindmapCanvas, STAGE_LABEL, STAGES, gateVerdict} from "./MindmapCanvas"
 
 const STATUS_ICON: Record<string, string> = {unassigned: "○", claimed: "◔", doing: "◑", done: "●"}
 
@@ -106,6 +106,17 @@ function MindmapDetail({state, onAction, onShare, onShareArtifact}: {state: Mind
 
   const sel = selectedId ? tree.nodes[selectedId] : null
   const nodeArgs = selectedId ? {mindmap_uri: uri, id: selectedId} : {}
+  // R1.1 前端校验：stage 只能选"父棒或父棒+1"（根固定 positioning），跟后端一致——
+  // 不让用户选了再被拒。
+  const allowedStages: string[] = !sel
+    ? []
+    : !sel.parent_id
+      ? ["positioning"]
+      : (() => {
+          const parent = tree.nodes[sel.parent_id as string]
+          const pi = STAGES.indexOf(parent?.stage || "positioning")
+          return [STAGES[pi], STAGES[pi + 1]].filter(Boolean) as string[]
+        })()
 
   return (
     <div className="flex h-full flex-col gap-3 p-5">
@@ -126,6 +137,14 @@ function MindmapDetail({state, onAction, onShare, onShareArtifact}: {state: Mind
         <a className="inline-flex items-center gap-1 text-sm text-primary hover:underline" href={state.miro_board_url} target="_blank" rel="noreferrer">
           <ExternalLink className="h-3.5 w-3.5" /> 打开 Miro 看板
         </a>
+      )}
+
+      {/* 校验拒绝的醒目提示(中文)——last_dispatch_status 是 error 时显示红横幅 */}
+      {dispatchError(state.last_dispatch_status) && (
+        <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          <span>⚠</span>
+          <span>{dispatchError(state.last_dispatch_status)}</span>
+        </div>
       )}
 
       <div className="flex flex-1 gap-3 overflow-hidden">
@@ -157,7 +176,7 @@ function MindmapDetail({state, onAction, onShare, onShareArtifact}: {state: Mind
           <div className="rounded-md border border-border p-2">
             <div className="mb-1.5 text-xs font-semibold text-muted-foreground">节点属性</div>
             {sel ? (
-              <NodePanel node={sel} args={nodeArgs} stages={stages} statuses={statuses} onAction={onAction} onShareArtifact={onShareArtifact} />
+              <NodePanel node={sel} args={nodeArgs} stages={allowedStages} statuses={statuses} onAction={onAction} onShareArtifact={onShareArtifact} />
             ) : (
               <p className="text-xs text-muted-foreground">点画布里的节点查看/编辑属性。</p>
             )}
@@ -194,6 +213,10 @@ function NodePanel({node, args, stages, statuses, onAction, onShareArtifact}: {
 }) {
   const owner = node.owner ? node.owner.split("/").pop() : null
   const selectCls = "rounded border border-border bg-background px-1 py-0.5 text-xs text-muted-foreground"
+  // issue2: inline content 用 textarea 编辑器(替 window.prompt 单行 hack)
+  const [editing, setEditing] = useState(false)
+  const [cName, setCName] = useState("")
+  const [cBody, setCBody] = useState("")
   return (
     <div className="flex flex-col gap-2 text-sm">
       <div className="font-medium text-foreground">{node.title}</div>
@@ -202,15 +225,26 @@ function NodePanel({node, args, stages, statuses, onAction, onShareArtifact}: {
         {node.stage && <span className="rounded bg-muted px-1 text-primary">{STAGE_LABEL[node.stage] || node.stage}</span>}
         {owner && <span>@{owner}</span>}
       </div>
+      {(() => {
+        // 片4 gate 软门：派生评价（不拦 status，纯提示）
+        const gv = gateVerdict(node)
+        if (gv.verdict === "none") return null
+        return (
+          <div className={`text-xs ${gv.verdict === "pass" ? "text-green-600" : "text-amber-600"}`}>
+            {gv.verdict === "pass" ? "✓ 本棒已过 gate" : `⚠ gate 未过：${gv.reason}`}
+          </div>
+        )
+      })()}
       <div className="flex flex-wrap items-center gap-1">
         <Button type="button" size="sm" variant="secondary" onClick={() => onAction("mindmap.claim_node", args)}>
           <Hand className="h-3.5 w-3.5" /> 认领
         </Button>
-        <select className={selectCls} value="" onChange={(e) => e.target.value && onAction("mindmap.set_status", {...args, status: e.target.value})}>
+        {/* 回显当前值(issue1: 改完看得到、不再绑空串显得"没存") */}
+        <select className={selectCls} value={statuses.includes(node.status || "") ? node.status || "" : ""} onChange={(e) => e.target.value && onAction("mindmap.set_status", {...args, status: e.target.value})}>
           <option value="">状态…</option>
           {statuses.map((s) => (<option key={s} value={s}>{s}</option>))}
         </select>
-        <select className={selectCls} value="" onChange={(e) => e.target.value && onAction("mindmap.set_stage", {...args, stage: e.target.value})}>
+        <select className={selectCls} value={node.stage || ""} onChange={(e) => e.target.value && onAction("mindmap.set_stage", {...args, stage: e.target.value})}>
           <option value="">阶段…</option>
           {stages.map((s) => (<option key={s} value={s}>{STAGE_LABEL[s] || s}</option>))}
         </select>
@@ -238,32 +272,54 @@ function NodePanel({node, args, stages, statuses, onAction, onShareArtifact}: {
             )
           })}
         </ul>
-        <div className="mt-1 flex gap-3 text-xs">
-          <button
-            type="button"
-            className="inline-flex items-center gap-1 text-primary hover:underline"
-            onClick={() => {
-              const name = window.prompt("链接产物名（如 github PR #1）")
-              if (!name) return
-              const url = window.prompt("URL（可分享链接，别填本地路径）") || ""
-              onAction("mindmap.attach_artifact", {...args, artifact: {tool: "ref", kind: "link", ref: name, url}})
-            }}
-          >
-            <Paperclip className="h-3 w-3" /> 加链接
-          </button>
-          <button
-            type="button"
-            className="inline-flex items-center gap-1 text-primary hover:underline"
-            onClick={() => {
-              const name = window.prompt("内容产物名（如 Gherkin 验收）")
-              if (!name) return
-              const content = window.prompt("markdown 内容（存 ezagent 真相源，CI 可读）")
-              if (content) onAction("mindmap.attach_artifact", {...args, artifact: {tool: "inline", kind: "spec", ref: name, content}})
-            }}
-          >
-            📄 加内容
-          </button>
-        </div>
+        {editing ? (
+          <div className="mt-1 flex flex-col gap-1">
+            <input className={`${inputCls} w-full`} placeholder="产物名（如 Gherkin 验收）" value={cName} onChange={(e) => setCName(e.target.value)} />
+            <textarea
+              className="h-28 w-full rounded-md border border-border bg-background px-2 py-1 font-mono text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+              placeholder={"markdown 内容（存 ezagent 真相源，CI 可读）\nGiven …\nWhen …\nThen …"}
+              value={cBody}
+              onChange={(e) => setCBody(e.target.value)}
+            />
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => {
+                  if (cName.trim() && cBody.trim()) {
+                    onAction("mindmap.attach_artifact", {...args, artifact: {tool: "inline", kind: "spec", ref: cName.trim(), content: cBody}})
+                    setCName("")
+                    setCBody("")
+                    setEditing(false)
+                  }
+                }}
+              >
+                保存
+              </Button>
+              <button type="button" className="text-xs text-muted-foreground hover:underline" onClick={() => setEditing(false)}>
+                取消
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="mt-1 flex gap-3 text-xs">
+            <button
+              type="button"
+              className="inline-flex items-center gap-1 text-primary hover:underline"
+              onClick={() => {
+                const name = window.prompt("链接产物名（如 github PR #1）")
+                if (!name) return
+                const url = window.prompt("URL（可分享链接，别填本地路径）") || ""
+                onAction("mindmap.attach_artifact", {...args, artifact: {tool: "ref", kind: "link", ref: name, url}})
+              }}
+            >
+              <Paperclip className="h-3 w-3" /> 加链接
+            </button>
+            <button type="button" className="inline-flex items-center gap-1 text-primary hover:underline" onClick={() => setEditing(true)}>
+              📄 加内容
+            </button>
+          </div>
+        )}
       </div>
       <div className="flex flex-wrap gap-2 border-t border-border pt-2 text-xs">
         <button
@@ -300,8 +356,34 @@ function NodePanel({node, args, stages, statuses, onAction, onShareArtifact}: {
   )
 }
 
+// 校验/操作失败码 → 中文（顶部红横幅用；返回 null 表示不是错误）
+const DISPATCH_ERR: Record<string, string> = {
+  forbidden: "无权限：节点已被他人认领，只有 owner 或 admin 能改",
+  must_claim_first: "请先认领该节点，再改状态",
+  already_claimed: "该节点已被他人认领",
+  stage_order_violation: "阶段不合法：只能是父节点的阶段或下一阶段（固定接力链，不能跳棒/回退）",
+  invalid_stage: "无效阶段",
+  invalid_status: "无效状态",
+  node_not_found: "节点不存在",
+  parent_not_found: "父节点不存在",
+  would_create_cycle: "不能移动成自己的子孙（会成环）",
+  bad_mindmap_uri: "导图地址无效",
+  unauthorized: "无权限（该操作需 admin）",
+  no_caller: "缺调用者身份",
+  name_required: "名称不能为空",
+  invalid_workspace: "工作区无效",
+  access_token_required: "缺 Miro access token",
+}
+function dispatchError(status?: string | null): string | null {
+  if (!status || !status.startsWith("error:")) return null
+  const code = status.slice("error:".length)
+  return DISPATCH_ERR[code] || `操作失败：${code}`
+}
+
 function Status({state}: {state: MindmapState}) {
-  if (!state.last_dispatch_status) return null
-  const ok = state.last_dispatch_status === "ok"
-  return <p className={`mt-2 text-xs ${ok ? "text-muted-foreground" : "text-destructive"}`}>· {state.last_dispatch_status}</p>
+  const s = state.last_dispatch_status
+  if (!s) return null
+  if (s === "ok") return <p className="mt-2 text-xs text-green-600">✓ 已保存</p>
+  if (dispatchError(s)) return null // 错误已在顶部横幅显示
+  return <p className="mt-2 text-xs text-muted-foreground">· {s}</p>
 }

@@ -5,8 +5,10 @@ import {
   Handle,
   Position,
   ReactFlow,
+  ReactFlowProvider,
   useEdgesState,
   useNodesState,
+  useReactFlow,
   type Edge,
   type Node as FlowNode,
 } from "@xyflow/react"
@@ -47,6 +49,29 @@ export const STAGE_LABEL: Record<string, string> = {
 const NODE_W = 210
 const NODE_H = 48
 
+// 片4 gate 软门（路A，前端派生）：按节点 stage + artifacts 算"本棒是否过 gate"。
+// 纯提示——不拦 status；判据跟 inline content 的 Gherkin/kind 词表对齐。
+export type GateVerdict = {verdict: "pass" | "warn" | "none"; reason?: string}
+export function gateVerdict(node: {stage?: string | null; status?: string | null; artifacts?: {kind?: string; content?: string; ref?: string}[]}): GateVerdict {
+  const arts = (node.artifacts || []) as {kind?: string; content?: string; ref?: string}[]
+  const hasKind = (k: string) => arts.some((a) => a.kind === k)
+  const hasGherkin = arts.some((a) => /given|when|then|当|则|如果/i.test(a.content || ""))
+  switch (node.stage) {
+    case "feature":
+      return hasGherkin ? {verdict: "pass"} : {verdict: "warn", reason: "缺 spec 卡 / Gherkin 验收"}
+    case "issue":
+      return hasKind("issue") ? {verdict: "pass"} : {verdict: "warn", reason: "缺 issue"}
+    case "test":
+      return arts.some((a) => a.kind === "test_suite" && a.ref === "green")
+        ? {verdict: "pass"}
+        : {verdict: "warn", reason: "测试未绿"}
+    case "pr":
+      return hasKind("pr") ? {verdict: "pass"} : {verdict: "warn", reason: "缺 PR"}
+    default:
+      return node.status === "done" ? {verdict: "pass"} : {verdict: "none"}
+  }
+}
+
 // 自定义节点卡片（react-flow 渲染的每个节点）。点击=选中（属性在侧边栏显示）。
 function MmNode({data}: {data: {node: Node; id: string; selected: boolean; onSelect: (id: string) => void; onAddChild: (id: string) => void}}) {
   const {node, id, selected, onSelect, onAddChild} = data
@@ -62,11 +87,18 @@ function MmNode({data}: {data: {node: Node; id: string; selected: boolean; onSel
       {node.stage && <span className="rounded bg-muted px-1 text-[10px] text-primary">{STAGE_LABEL[node.stage] || node.stage}</span>}
       <span className="flex-1 truncate font-medium text-foreground" title={node.title}>{node.title}</span>
       {owner && <span className="text-[10px] text-muted-foreground">@{owner}</span>}
+      {(() => {
+        const gv = gateVerdict(node)
+        if (gv.verdict === "warn") return <span title={gv.reason} className="text-amber-500">⚠</span>
+        if (gv.verdict === "pass") return <span title="本棒已过 gate" className="text-green-600">✓</span>
+        return null
+      })()}
       <button
         type="button"
         title="加子节点"
+        onPointerDown={(e) => e.stopPropagation()}
         onClick={(e) => {e.stopPropagation(); onAddChild(id)}}
-        className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+        className="nodrag rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
       >
         <Plus className="h-3.5 w-3.5" />
       </button>
@@ -102,14 +134,26 @@ function layoutTree(tree: Tree, selectedId: string | null, onSelect: (id: string
   return {nodes, edges}
 }
 
-// 受控选择：selectedId / onSelectNode 由父组件（MindmapDetail）管，属性面板在侧边栏。
-export function MindmapCanvas({uri, tree, selectedId, onSelectNode, onAction}: {
+type CanvasProps = {
   uri: string
   tree: Tree
   selectedId: string | null
   onSelectNode: (id: string) => void
   onAction: Act
-}) {
+}
+
+// 受控选择：selectedId / onSelectNode 由父组件（MindmapDetail）管，属性面板在侧边栏。
+// 外层用 ReactFlowProvider 包，内层 Flow 才能用 useReactFlow 在树变化时重新 fitView。
+export function MindmapCanvas(props: CanvasProps) {
+  return (
+    <ReactFlowProvider>
+      <Flow {...props} />
+    </ReactFlowProvider>
+  )
+}
+
+function Flow({uri, tree, selectedId, onSelectNode, onAction}: CanvasProps) {
+  const {fitView} = useReactFlow()
   const onAddChild = useCallback((id: string) => {
     const t = window.prompt("子节点标题")
     if (t && t.trim()) onAction("mindmap.add_node", {mindmap_uri: uri, parent_id: id, title: t.trim()})
@@ -119,11 +163,13 @@ export function MindmapCanvas({uri, tree, selectedId, onSelectNode, onAction}: {
   const [nodes, setNodes, onNodesChange] = useNodesState(laid.nodes)
   const [edges, setEdges, onEdgesChange] = useEdgesState(laid.edges)
 
-  // 树/选中变化 → 重新布局（节点可拖，但结构变了重排）。
+  // 树/选中变化 → 重新布局 + 重新 fitView（加了节点要自动入视野，否则点不到/看不见）。
   useEffect(() => {
     setNodes(laid.nodes)
     setEdges(laid.edges)
-  }, [laid, setNodes, setEdges])
+    const t = setTimeout(() => fitView({padding: 0.2, maxZoom: 1}), 60)
+    return () => clearTimeout(t)
+  }, [laid, setNodes, setEdges, fitView])
 
   // react-flow 必须有显式尺寸——flex/百分比在 mount 时为 0 会让 fitView 失效、节点不可见。
   return (
@@ -133,6 +179,7 @@ export function MindmapCanvas({uri, tree, selectedId, onSelectNode, onAction}: {
         edges={edges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
+        onNodeClick={(_, node) => onSelectNode(node.id)}
         nodeTypes={nodeTypes}
         fitView
         fitViewOptions={{padding: 0.2, maxZoom: 1}}
