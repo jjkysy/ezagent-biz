@@ -1,7 +1,8 @@
 import React from "react"
-import {Bug, ChevronUp, Maximize2, MessageSquare, Paperclip, Plus, RotateCcw, Route, Send, TerminalSquare, UserPlus, X} from "lucide-react"
+import {Bug, ChevronUp, Maximize2, MessageSquare, Network, Paperclip, Plus, RotateCcw, Route, Send, TerminalSquare, UserPlus, X} from "lucide-react"
 
 import {Button} from "./ui/primitives"
+import {Mindmap} from "./Mindmap"
 import {PtyTerminalSurface} from "./PtyTerminal"
 
 // Server-rendered attachment: an uploads URI carries a signed download `href`
@@ -88,6 +89,7 @@ type Props = {
   onInvite: (sessionUri: string, member: string) => void
   onPtyInput: (bytes: string) => void
   onPtyResize: (size: {cols: number; rows: number}) => void
+  onMindmapAction: (action: string, args: Record<string, unknown>) => void
   onServerEvent?: (event: string, callback: (payload: unknown) => void) => void
 }
 
@@ -110,6 +112,7 @@ export function Conversation({
   onInvite,
   onPtyInput,
   onPtyResize,
+  onMindmapAction,
   onServerEvent,
 }: Props) {
   const sessionUri = state.session_uri || ""
@@ -117,7 +120,13 @@ export function Conversation({
   const sessions = state.sessions || []
   const routingRules = state.routing_rules || []
   const activeView =
-    state.active_view === "pty" ? "pty" : state.active_view === "page" ? "page" : "chat"
+    state.active_view === "pty"
+      ? "pty"
+      : state.active_view === "mindmap"
+        ? "mindmap"
+        : state.active_view === "page"
+          ? "page"
+          : "chat"
   // TEMPORARY (hello operator view): only hello sessions get a Page tab. The
   // proper home for this is world surfacing registered SessionViews (Phase 3);
   // for now it embeds the customer surface. See HelloPagePreview below.
@@ -352,6 +361,10 @@ export function Conversation({
                 <TerminalSquare aria-hidden="true" className="h-[15px] w-[15px]" />
                 PTY
               </button>
+              <button type="button" className={segmentClass(activeView === "mindmap")} onClick={() => sessionUri && onSwitchView(sessionUri, "mindmap")} aria-label="Show mindmap">
+                <Network aria-hidden="true" className="h-[15px] w-[15px]" />
+                Mindmap
+              </button>
               {isHelloSession && (
                 <button
                   type="button"
@@ -391,6 +404,11 @@ export function Conversation({
               onResize={onPtyResize}
               onServerEvent={onServerEvent}
             />
+          </div>
+        ) : activeView === "mindmap" ? (
+          // session 内 mindmap 子视图 = :subcomponent（Conversation 自挂，不进 layout registry）。
+          <div data-world-subcomponent="mindmap_board" className="flex-1 overflow-y-auto bg-card">
+            <Mindmap state={state} onAction={onMindmapAction} />
           </div>
         ) : activeView === "page" ? (
           <HelloPagePreview sessionUri={sessionUri} />

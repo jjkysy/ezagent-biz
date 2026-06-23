@@ -460,6 +460,7 @@ function renderLayoutComponent(component: NonNullable<WorldLayout["components"]>
           onInvite={context.onInvite}
           onPtyInput={context.onPtyInput}
           onPtyResize={context.onPtyResize}
+          onMindmapAction={context.onWorkspacePluginAction}
           onServerEvent={context.onServerEvent}
         />
       )

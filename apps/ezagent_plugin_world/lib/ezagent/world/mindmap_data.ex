@@ -42,6 +42,46 @@ defmodule Ezagent.World.MindmapData do
     _ -> []
   end
 
+  @doc """
+  session 内 mindmap 子视图的数据：按 session URI 派生一个稳定的
+  `resource://<ws>/mindmap/sess-<hash>` board（每个 session 一张图），确保起活，返回
+  `{mindmap_uri, tree, stages, statuses}` 给前端子视图。
+  """
+  @spec session_board(URI.t(), map()) :: map()
+  def session_board(%URI{} = session_uri, ctx) do
+    uri = session_mindmap_uri(session_uri)
+    ensure_spawned(uri)
+
+    %{
+      "mindmap_uri" => encode_uri(uri),
+      "tree" => read_tree(uri, ctx),
+      "stages" => @stages,
+      "statuses" => @statuses
+    }
+  end
+
+  @doc false
+  def session_mindmap_uri(%URI{} = session_uri) do
+    ws = Ezagent.URI.workspace_name!(session_uri)
+    name = "sess-" <> Integer.to_string(:erlang.phash2(URI.to_string(session_uri)))
+    Ezagent.URI.resource(ws, "mindmap", name)
+  end
+
+  # 起活（若该 mindmap Kind 没在跑就经 InstanceSupervisor 直起；已在跑则忽略）。
+  defp ensure_spawned(%URI{} = uri) do
+    spec = %{
+      id: {:mindmap, URI.to_string(uri)},
+      start: {Ezagent.Kind.Server, :start_link, [{EzagentPluginMindmap.Mindmap, %{uri: uri}}]},
+      restart: :transient
+    }
+
+    case DynamicSupervisor.start_child(EzagentPluginMindmap.InstanceSupervisor, spec) do
+      {:ok, _} -> :ok
+      {:error, {:already_started, _}} -> :ok
+      _ -> :ok
+    end
+  end
+
   @doc "读一个 mindmap 的节点树（dispatch get_tree，身份=登录者），整成 JSON-safe。"
   @spec read_tree(URI.t(), map()) :: map()
   def read_tree(%URI{} = uri, ctx) do
