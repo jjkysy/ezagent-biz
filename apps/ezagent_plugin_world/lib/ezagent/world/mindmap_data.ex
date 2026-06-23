@@ -26,8 +26,23 @@ defmodule Ezagent.World.MindmapData do
       "tree" => uri && read_tree(uri, ctx),
       "stages" => @stages,
       "statuses" => @statuses,
+      "miro" => miro_status(),
       "last_dispatch_status" => nil
     }
+  end
+
+  @doc "Miro 凭证连接状态（只读；凭证填 `system://credentials/miro.yaml`，同 feishu app 凭证）。"
+  @spec miro_status() :: map()
+  def miro_status do
+    case EzagentPluginMindmap.Miro.read_creds() do
+      {:ok, %{token: t, board_id: b}} when is_binary(t) and t != "" ->
+        %{"configured" => true, "board_id" => b}
+
+      _ ->
+        %{"configured" => false}
+    end
+  rescue
+    _ -> %{"configured" => false}
   end
 
   @doc "列出当前活着的 mindmap 实例。"

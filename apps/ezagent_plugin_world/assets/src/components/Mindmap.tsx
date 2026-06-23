@@ -24,6 +24,7 @@ export type MindmapState = {
   stages?: string[]
   statuses?: string[]
   miro_board_url?: string | null
+  miro?: {configured?: boolean; board_id?: string | null}
   last_dispatch_status?: string | null
 }
 
@@ -48,8 +49,23 @@ function MindmapList({state, onAction}: {state: MindmapState; onAction: Act}) {
   return (
     <div className="flex flex-col gap-4 p-6">
       <div>
-        <h2 className="text-lg font-semibold text-foreground">思维导图</h2>
-        <p className="text-sm text-muted-foreground">每张导图是产品全链路的拓扑骨架；建树、认领、记状态、挂产物/指标，并一键镜像到 Miro。</p>
+        <h2 className="text-lg font-semibold text-foreground">思维导图 · 配置</h2>
+        <p className="text-sm text-muted-foreground">每张导图是产品全链路的拓扑骨架；<strong>建树/认领/编辑在会话(session)里的 Mindmap 子视图</strong>，本页是插件配置。</p>
+      </div>
+      <div className="rounded-md border border-border bg-card p-3 text-sm">
+        <div className="flex items-center gap-2">
+          <span className="font-medium text-foreground">Miro 镜像</span>
+          {state.miro?.configured ? (
+            <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-green-600 dark:text-green-400">已配置 ✓</span>
+          ) : (
+            <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">未配置</span>
+          )}
+        </div>
+        <p className="mt-1 text-xs text-muted-foreground">
+          {state.miro?.configured
+            ? "已连接 Miro，会话内可一键推送。"
+            : "凭证填在 system://credentials/miro.yaml（节点级，同 feishu app 凭证）。不配也能用，只是不同步。"}
+        </p>
       </div>
       <div className="flex gap-2">
         <input className={`${inputCls} w-72`} placeholder="新建导图名称（如 product-2026）" value={name} onChange={(e) => setName(e.target.value)} />
