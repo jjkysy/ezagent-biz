@@ -5,6 +5,9 @@ import {Button} from "./ui/primitives"
 import {Mindmap} from "./Mindmap"
 import {PtyTerminalSurface} from "./PtyTerminal"
 
+// chat 里 mindmap 卡片消息的 sentinel 前缀（分享时发，气泡识别后渲染成可点卡片）。
+const MINDMAP_CARD_TAG = "[[mindmap]]"
+
 // Server-rendered attachment: an uploads URI carries a signed download `href`
 // (`message_row/2`); any other value renders as a plain label (`href: null`).
 type Attachment = {
@@ -408,7 +411,11 @@ export function Conversation({
         ) : activeView === "mindmap" ? (
           // session 内 mindmap 子视图 = :subcomponent（Conversation 自挂，不进 layout registry）。
           <div data-world-subcomponent="mindmap_board" className="flex-1 overflow-y-auto bg-card">
-            <Mindmap state={state} onAction={onMindmapAction} />
+            <Mindmap
+              state={state}
+              onAction={onMindmapAction}
+              onShare={() => sessionUri && onSend(sessionUri, `${MINDMAP_CARD_TAG} 思维导图`, [])}
+            />
           </div>
         ) : activeView === "page" ? (
           <HelloPagePreview sessionUri={sessionUri} />
@@ -451,7 +458,23 @@ export function Conversation({
                           </span>
                         )}
                       </div>
-                      {message.text && <p className={bubbleTextClass(mine, kind)}>{message.text}</p>}
+                      {message.text &&
+                        (message.text.startsWith(MINDMAP_CARD_TAG) ? (
+                          // mindmap 卡片：点击跳回 Mindmap 子视图编辑（chat↔mindmap 来回）。
+                          <button
+                            type="button"
+                            onClick={() => sessionUri && onSwitchView(sessionUri, "mindmap")}
+                            className="mt-1 flex w-full items-center gap-2 rounded-md border border-border bg-background px-3 py-2 text-left hover:border-primary"
+                          >
+                            <Network aria-hidden="true" className="h-4 w-4 text-primary" />
+                            <span className="flex-1 text-sm font-medium text-foreground">
+                              {message.text.slice(MINDMAP_CARD_TAG.length).trim() || "思维导图"}
+                            </span>
+                            <span className="whitespace-nowrap text-xs text-muted-foreground">点击编辑 →</span>
+                          </button>
+                        ) : (
+                          <p className={bubbleTextClass(mine, kind)}>{message.text}</p>
+                        ))}
                       {message.attachments && message.attachments.length > 0 && (
                         <ul className="m-0 mt-0.5 flex list-none flex-wrap gap-1.5 p-0">
                           {message.attachments.map((attachment, index) => (

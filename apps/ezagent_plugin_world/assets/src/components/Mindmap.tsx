@@ -1,5 +1,5 @@
 import React, {useState} from "react"
-import {ExternalLink, Plus, RefreshCw} from "lucide-react"
+import {ExternalLink, Plus, RefreshCw, Send} from "lucide-react"
 
 import {Button} from "./ui/primitives"
 import {MindmapCanvas} from "./MindmapCanvas"
@@ -34,9 +34,17 @@ type Act = (action: string, args: Record<string, unknown>) => void
 const inputCls =
   "rounded-md border border-border bg-background px-2.5 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
 
-export function Mindmap({state, onAction = () => undefined}: {state: MindmapState; onAction?: Act}) {
+export function Mindmap({
+  state,
+  onAction = () => undefined,
+  onShare,
+}: {
+  state: MindmapState
+  onAction?: Act
+  onShare?: () => void
+}) {
   return state.mindmap_uri ? (
-    <MindmapDetail state={state} onAction={onAction} />
+    <MindmapDetail state={state} onAction={onAction} onShare={onShare} />
   ) : (
     <MindmapList state={state} onAction={onAction} />
   )
@@ -82,7 +90,7 @@ function MindmapList({state, onAction}: {state: MindmapState; onAction: Act}) {
   )
 }
 
-function MindmapDetail({state, onAction}: {state: MindmapState; onAction: Act}) {
+function MindmapDetail({state, onAction, onShare}: {state: MindmapState; onAction: Act; onShare?: () => void}) {
   const uri = state.mindmap_uri as string
   const tree = state.tree || {nodes: {}, root_id: null}
   const stages = state.stages || ["purpose", "value", "module", "feature", "dev", "ops"]
@@ -93,9 +101,16 @@ function MindmapDetail({state, onAction}: {state: MindmapState; onAction: Act}) 
     <div className="flex h-full flex-col gap-3 p-5">
       <div className="flex items-center justify-between">
         <h2 className="text-base font-semibold text-foreground">思维导图 · {uri.split("/").pop()}</h2>
-        <Button type="button" size="sm" variant="secondary" onClick={() => onAction("mindmap.sync_miro", {mindmap_uri: uri})}>
-          <RefreshCw className="h-4 w-4" /> 推送到 Miro
-        </Button>
+        <div className="flex items-center gap-2">
+          {onShare && (
+            <Button type="button" size="sm" variant="secondary" onClick={onShare}>
+              <Send className="h-4 w-4" /> 分享到对话
+            </Button>
+          )}
+          <Button type="button" size="sm" variant="secondary" onClick={() => onAction("mindmap.sync_miro", {mindmap_uri: uri})}>
+            <RefreshCw className="h-4 w-4" /> 推送到 Miro
+          </Button>
+        </div>
       </div>
       {state.miro_board_url && (
         <a className="inline-flex items-center gap-1 text-sm text-primary hover:underline" href={state.miro_board_url} target="_blank" rel="noreferrer">
