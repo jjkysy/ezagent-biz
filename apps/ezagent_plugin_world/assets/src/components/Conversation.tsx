@@ -7,6 +7,8 @@ import {PtyTerminalSurface} from "./PtyTerminal"
 
 // chat 里 mindmap 卡片消息的 sentinel 前缀（分享时发，气泡识别后渲染成可点卡片）。
 const MINDMAP_CARD_TAG = "[[mindmap]]"
+// 单条 attachment 卡片：`[[artifact]] 名称 ::: url`，气泡渲染成可点卡片，点击打开 url。
+const ARTIFACT_CARD_TAG = "[[artifact]]"
 
 // Server-rendered attachment: an uploads URI carries a signed download `href`
 // (`message_row/2`); any other value renders as a plain label (`href: null`).
@@ -415,6 +417,7 @@ export function Conversation({
               state={state}
               onAction={onMindmapAction}
               onShare={() => sessionUri && onSend(sessionUri, `${MINDMAP_CARD_TAG} 思维导图`, [])}
+              onShareArtifact={(name, url) => sessionUri && onSend(sessionUri, `${ARTIFACT_CARD_TAG} ${name} ::: ${url}`, [])}
             />
           </div>
         ) : activeView === "page" ? (
@@ -472,6 +475,25 @@ export function Conversation({
                             </span>
                             <span className="whitespace-nowrap text-xs text-muted-foreground">点击编辑 →</span>
                           </button>
+                        ) : message.text.startsWith(ARTIFACT_CARD_TAG) ? (
+                          (() => {
+                            const rest = message.text.slice(ARTIFACT_CARD_TAG.length).trim()
+                            const sep = rest.indexOf(" ::: ")
+                            const name = sep >= 0 ? rest.slice(0, sep) : rest
+                            const url = sep >= 0 ? rest.slice(sep + 5).trim() : ""
+                            return (
+                              <a
+                                href={url || "#"}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="mt-1 flex w-full items-center gap-2 rounded-md border border-border bg-background px-3 py-2 hover:border-primary"
+                              >
+                                <Paperclip aria-hidden="true" className="h-4 w-4 text-primary" />
+                                <span className="flex-1 truncate text-sm font-medium text-foreground">{name || "产物"}</span>
+                                <span className="whitespace-nowrap text-xs text-muted-foreground">{url ? "打开 →" : "（内容在节点）"}</span>
+                              </a>
+                            )
+                          })()
                         ) : (
                           <p className={bubbleTextClass(mine, kind)}>{message.text}</p>
                         ))}

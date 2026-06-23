@@ -40,13 +40,15 @@ export function Mindmap({
   state,
   onAction = () => undefined,
   onShare,
+  onShareArtifact,
 }: {
   state: MindmapState
   onAction?: Act
   onShare?: () => void
+  onShareArtifact?: (name: string, url: string) => void
 }) {
   return state.mindmap_uri ? (
-    <MindmapDetail state={state} onAction={onAction} onShare={onShare} />
+    <MindmapDetail state={state} onAction={onAction} onShare={onShare} onShareArtifact={onShareArtifact} />
   ) : (
     <MindmapList state={state} onAction={onAction} />
   )
@@ -87,7 +89,7 @@ function MindmapList({state, onAction}: {state: MindmapState; onAction: Act}) {
   )
 }
 
-function MindmapDetail({state, onAction, onShare}: {state: MindmapState; onAction: Act; onShare?: () => void}) {
+function MindmapDetail({state, onAction, onShare, onShareArtifact}: {state: MindmapState; onAction: Act; onShare?: () => void; onShareArtifact?: (name: string, url: string) => void}) {
   const uri = state.mindmap_uri as string
   const tree = state.tree || {nodes: {}, root_id: null}
   const stages = state.stages || STAGES
@@ -155,7 +157,7 @@ function MindmapDetail({state, onAction, onShare}: {state: MindmapState; onActio
           <div className="rounded-md border border-border p-2">
             <div className="mb-1.5 text-xs font-semibold text-muted-foreground">节点属性</div>
             {sel ? (
-              <NodePanel node={sel} args={nodeArgs} stages={stages} statuses={statuses} onAction={onAction} />
+              <NodePanel node={sel} args={nodeArgs} stages={stages} statuses={statuses} onAction={onAction} onShareArtifact={onShareArtifact} />
             ) : (
               <p className="text-xs text-muted-foreground">点画布里的节点查看/编辑属性。</p>
             )}
@@ -182,12 +184,13 @@ function MindmapDetail({state, onAction, onShare}: {state: MindmapState; onActio
 }
 
 // 选中节点的属性面板（侧边栏）：认领 / 状态 / 阶段 / 产物 / 指标 / 改名 / 删除。
-function NodePanel({node, args, stages, statuses, onAction}: {
+function NodePanel({node, args, stages, statuses, onAction, onShareArtifact}: {
   node: Node
   args: Record<string, unknown>
   stages: string[]
   statuses: string[]
   onAction: Act
+  onShareArtifact?: (name: string, url: string) => void
 }) {
   const owner = node.owner ? node.owner.split("/").pop() : null
   const selectCls = "rounded border border-border bg-background px-1 py-0.5 text-xs text-muted-foreground"
@@ -214,21 +217,53 @@ function NodePanel({node, args, stages, statuses, onAction}: {
       </div>
       <div>
         <div className="text-xs font-semibold text-muted-foreground">产物（{node.artifacts?.length ?? 0}）</div>
-        <ul className="flex flex-col gap-0.5 text-xs text-muted-foreground">
-          {(node.artifacts ?? []).map((a, i) => (
-            <li key={i} className="truncate">📎 {String((a as Record<string, unknown>).ref ?? (a as Record<string, unknown>).tool ?? "artifact")}</li>
-          ))}
+        <ul className="flex flex-col gap-1 text-xs">
+          {(node.artifacts ?? []).map((raw, i) => {
+            const a = raw as {kind?: string; ref?: string; url?: string; content?: string}
+            const name = a.ref || a.kind || "artifact"
+            return (
+              <li key={i} className="flex items-center gap-1.5">
+                <Paperclip className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
+                <span className="flex-1 truncate text-foreground" title={a.content || name}>{name}</span>
+                {a.content && <span title={a.content}>📄</span>}
+                {a.url && (
+                  <a href={a.url} target="_blank" rel="noreferrer" className="text-primary hover:underline">打开</a>
+                )}
+                {onShareArtifact && (
+                  <button type="button" className="text-primary hover:underline" onClick={() => onShareArtifact(name, a.url || "")}>
+                    发对话
+                  </button>
+                )}
+              </li>
+            )
+          })}
         </ul>
-        <button
-          type="button"
-          className="mt-1 inline-flex items-center gap-1 text-xs text-primary hover:underline"
-          onClick={() => {
-            const ref = window.prompt("产物引用（如 github PR #1）")
-            if (ref) onAction("mindmap.attach_artifact", {...args, artifact: {tool: "github", kind: "pr", ref, url: ""}})
-          }}
-        >
-          <Paperclip className="h-3 w-3" /> 加产物
-        </button>
+        <div className="mt-1 flex gap-3 text-xs">
+          <button
+            type="button"
+            className="inline-flex items-center gap-1 text-primary hover:underline"
+            onClick={() => {
+              const name = window.prompt("链接产物名（如 github PR #1）")
+              if (!name) return
+              const url = window.prompt("URL（可分享链接，别填本地路径）") || ""
+              onAction("mindmap.attach_artifact", {...args, artifact: {tool: "ref", kind: "link", ref: name, url}})
+            }}
+          >
+            <Paperclip className="h-3 w-3" /> 加链接
+          </button>
+          <button
+            type="button"
+            className="inline-flex items-center gap-1 text-primary hover:underline"
+            onClick={() => {
+              const name = window.prompt("内容产物名（如 Gherkin 验收）")
+              if (!name) return
+              const content = window.prompt("markdown 内容（存 ezagent 真相源，CI 可读）")
+              if (content) onAction("mindmap.attach_artifact", {...args, artifact: {tool: "inline", kind: "spec", ref: name, content}})
+            }}
+          >
+            📄 加内容
+          </button>
+        </div>
       </div>
       <div className="flex flex-wrap gap-2 border-t border-border pt-2 text-xs">
         <button

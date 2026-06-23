@@ -498,9 +498,22 @@ defmodule Ezagent.Behavior.Mindmap do
 
   defp parse_enum(a, allowed) when is_atom(a), do: if(a in allowed, do: {:ok, a}, else: :error)
 
+  # inline 内容上限——artifact 进节点快照(真相源)，CI 关键内容(Gherkin/spec)走 inline
+  # 而非外部 ref(feishu 死链/权限墙)；设上限防快照膨胀。
+  @artifact_content_limit 8_192
+
   defp normalize_artifact(a) do
-    %{tool: sget(a, :tool), kind: sget(a, :kind), ref: sget(a, :ref), url: sget(a, :url)}
+    %{
+      tool: sget(a, :tool),
+      kind: sget(a, :kind),
+      ref: sget(a, :ref),
+      url: sget(a, :url),
+      content: cap_content(sget(a, :content))
+    }
   end
+
+  defp cap_content(c) when is_binary(c), do: String.slice(c, 0, @artifact_content_limit)
+  defp cap_content(_), do: nil
 
   defp normalize_metric(m) do
     %{
