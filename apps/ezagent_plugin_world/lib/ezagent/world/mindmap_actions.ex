@@ -73,6 +73,9 @@ defmodule Ezagent.World.MindmapActions do
       when is_map(m),
       do: act(socket, u, :set_metric, %{id: id, metric: m})
 
+  def handle_dispatch(socket, "mindmap.drop_subtree", %{"mindmap_uri" => u, "id" => id} = a),
+    do: act(socket, u, :drop_subtree, %{id: id, reason: Map.get(a, "reason", "")})
+
   def handle_dispatch(socket, "mindmap.create", %{"name" => name}) when is_binary(name),
     do: create_mindmap(socket, name)
 

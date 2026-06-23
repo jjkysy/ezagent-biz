@@ -50,6 +50,7 @@ defmodule EzagentPluginMindmap.Application do
           :attach_artifact,
           :detach_artifact,
           :set_metric,
+          :drop_subtree,
           :get_tree,
           :export_markmap,
           :import_markmap

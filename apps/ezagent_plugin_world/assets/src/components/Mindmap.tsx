@@ -1,5 +1,5 @@
 import {useEffect, useState} from "react"
-import {ExternalLink, Hand, Paperclip, Pencil, Plus, RefreshCw, Send, Target, Trash2} from "lucide-react"
+import {ExternalLink, Hand, Paperclip, Pencil, Plus, RefreshCw, Scissors, Send, Target, Trash2} from "lucide-react"
 
 import {Button} from "./ui/primitives"
 import {MindmapCanvas, STAGE_LABEL, STAGES, gateVerdict} from "./MindmapCanvas"
@@ -350,6 +350,17 @@ function NodePanel({node, args, stages, statuses, onAction, onShareArtifact}: {
           onClick={() => onAction("mindmap.remove_node", args)}
         >
           <Trash2 className="h-3 w-3" /> 删除
+        </button>
+        <button
+          type="button"
+          className="inline-flex items-center gap-1 text-amber-600 hover:underline"
+          title="指标不达标→砍整个子树+反哺最近痛点"
+          onClick={() => {
+            const reason = window.prompt("drop 原因（指标不达标说明）")
+            if (reason !== null) onAction("mindmap.drop_subtree", {...args, reason})
+          }}
+        >
+          <Scissors className="h-3 w-3" /> drop
         </button>
       </div>
     </div>

@@ -121,6 +121,14 @@ defmodule Ezagent.Behavior.Mindmap do
     description: "按 name upsert 一个指标"
   )
 
+  action(:drop_subtree,
+    args: %{id: :string, reason: :string},
+    returns: %{},
+    caps: [:drop_subtree],
+    modes: [:call],
+    description: "砍子树(指标不达标 drop)+ 反哺最近 pain 祖先记一笔"
+  )
+
   action(:get_tree,
     args: %{},
     returns: %{tree: :map},
@@ -159,6 +167,7 @@ defmodule Ezagent.Behavior.Mindmap do
           :attach_artifact,
           :detach_artifact,
           :set_metric,
+          :drop_subtree,
           :get_tree,
           :export_markmap,
           :import_markmap
@@ -259,6 +268,59 @@ defmodule Ezagent.Behavior.Mindmap do
         new_nodes = Map.drop(t.nodes, subtree_ids(t.nodes, id))
         new_root = if id == t.root_id, do: nil, else: t.root_id
         {:ok, %{}, [commit(%{t | nodes: new_nodes, root_id: new_root})]}
+    end
+  end
+
+  @doc false
+  # drop 闭环（片8）：砍子树 + 反哺最近 pain 祖先记一笔（指标不达标→drop→回 pain 重选）。
+  def handle_drop_subtree(%{id: id} = args, ctx) do
+    reason = to_string(Map.get(args, :reason, ""))
+    t = tree(ctx)
+
+    cond do
+      not Map.has_key?(t.nodes, id) ->
+        {:error, :node_not_found}
+
+      not owner_or_admin?(ctx, t.nodes[id]) ->
+        {:error, :forbidden}
+
+      true ->
+        title = t.nodes[id].title
+        pain_id = nearest_pain_ancestor(t.nodes, t.nodes[id].parent_id)
+        dropped = subtree_ids(t.nodes, id)
+        nodes1 = Map.drop(t.nodes, dropped)
+
+        # 反哺：若有未被砍掉的 pain 祖先，挂一条 drop 记录 artifact
+        nodes2 =
+          if pain_id && Map.has_key?(nodes1, pain_id) do
+            rec = %{
+              tool: "drop",
+              kind: "drop_record",
+              ref: "drop:" <> title,
+              url: nil,
+              content: "已 drop「#{title}」子树。原因：#{reason}"
+            }
+
+            Map.update!(nodes1, pain_id, fn n -> %{n | artifacts: n.artifacts ++ [rec]} end)
+          else
+            nodes1
+          end
+
+        new_root = if id == t.root_id, do: nil, else: t.root_id
+
+        {:ok, %{dropped: length(dropped), pain: pain_id},
+         [commit(%{t | nodes: nodes2, root_id: new_root})]}
+    end
+  end
+
+  # 从给定节点向上找最近的 stage==:pain 祖先（找不到返 nil）。
+  defp nearest_pain_ancestor(_nodes, nil), do: nil
+
+  defp nearest_pain_ancestor(nodes, id) do
+    case Map.get(nodes, id) do
+      %{stage: :pain} -> id
+      %{parent_id: pid} -> nearest_pain_ancestor(nodes, pid)
+      _ -> nil
     end
   end
 

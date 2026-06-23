@@ -234,6 +234,31 @@ defmodule Ezagent.Behavior.MindmapTest do
                Mindmap.handle_set_stage(%{id: c, stage: "issue"}, admin_ctx(t))
     end
 
+    test "drop_subtree：砍子树 + 反哺最近 pain 祖先记一笔 drop_record", %{} do
+      {t, _r, c} = seed()
+      {:ok, _, e1} = Mindmap.handle_set_stage(%{id: c, stage: "metric"}, admin_ctx(t))
+      t1 = committed(e1)
+      {:ok, %{id: gc}, e2} = Mindmap.handle_add_node(%{parent_id: c, title: "痛点X"}, admin_ctx(t1))
+      t2 = committed(e2)
+      {:ok, _, e3} = Mindmap.handle_set_stage(%{id: gc, stage: "pain"}, admin_ctx(t2))
+      t3 = committed(e3)
+      {:ok, %{id: ggc}, e4} = Mindmap.handle_add_node(%{parent_id: gc, title: "方案A"}, admin_ctx(t3))
+      t4 = committed(e4)
+
+      # drop 方案A 子树
+      assert {:ok, %{dropped: 1}, e5} =
+               Mindmap.handle_drop_subtree(%{id: ggc, reason: "7天阅读<500"}, admin_ctx(t4))
+
+      t5 = committed(e5)
+      refute Map.has_key?(t5.nodes, ggc), "子树应被砍掉"
+      # 最近 pain 祖先(痛点X)挂了一条 drop_record
+      assert Enum.any?(t5.nodes[gc].artifacts, &(&1.kind == "drop_record")), "pain 祖先应记一笔 drop"
+
+      # 非 owner 非 admin → forbidden
+      assert {:error, :forbidden} =
+               Mindmap.handle_drop_subtree(%{id: gc, reason: "x"}, user_ctx(t4, "entity://system/user/bob"))
+    end
+
     test "import_markmap 仅 admin", %{} do
       assert {:error, :forbidden} =
                Mindmap.handle_import_markmap(
