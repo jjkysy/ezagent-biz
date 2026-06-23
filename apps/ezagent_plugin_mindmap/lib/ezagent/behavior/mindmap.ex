@@ -12,7 +12,7 @@ defmodule Ezagent.Behavior.Mindmap do
 
       node = %{
         parent_id, title, order,                       # 拓扑
-        stage:     :purpose|:value|:module|:feature|:dev|:ops,  # 分类(非权限边界)
+        stage:     :positioning|:metric|:pain|:anchor|:ux|:feature|:issue|:test|:pr,  # 9阶段固定链(非权限边界)
         owner:     user_uri | nil,                      # 认领人; 既问责又是权限闸
         status:    :unassigned|:claimed|:doing|:done,   # 粗4态(细状态归外部工具)
         artifacts: [%{tool,kind,ref,url}],              # 挂工具产物(github PR/飞书文档/xmind…)
@@ -28,7 +28,8 @@ defmodule Ezagent.Behavior.Mindmap do
 
   alias EzagentPluginMindmap.Markmap
 
-  @stages [:purpose, :value, :module, :feature, :dev, :ops]
+  # 产品自举开发流程的 9 个固定阶段（真相源接力链；顺序即 list 顺序，索引用于插入校验）。
+  @stages [:positioning, :metric, :pain, :anchor, :ux, :feature, :issue, :test, :pr]
   # set_status 只在已认领后的三态间流转；:unassigned 经 claim/unclaim 切换。
   @settable_status [:claimed, :doing, :done]
 
@@ -197,7 +198,9 @@ defmodule Ezagent.Behavior.Mindmap do
         new_seq = seq + 1
         id = "n" <> Integer.to_string(new_seq)
         order = Enum.count(nodes, fn {_id, n} -> n.parent_id == parent_id end)
-        stage = if parent_id, do: nodes[parent_id].stage, else: :purpose
+
+        # 根节点默认第一阶段 :positioning；子节点默认继承父阶段（插入校验在 set_stage 收口）。
+        stage = if parent_id, do: nodes[parent_id].stage, else: :positioning
         node = new_node(parent_id, title, order, stage)
         new_root = root_id || if(parent_id == nil, do: id, else: nil)
 
@@ -229,6 +232,11 @@ defmodule Ezagent.Behavior.Mindmap do
       new_parent_id != nil and descendant?(nodes, id, new_parent_id) ->
         {:error, :would_create_cycle}
 
+      # R1：移动后 node.stage 必须 ≥ 新父 stage（子树各节点 stage 已 ≥ node，整链保持单调）。
+      new_parent_id != nil and
+          stage_index(nodes[id].stage) < stage_index(nodes[new_parent_id].stage) ->
+        {:error, {:stage_order_violation, nodes[id].stage}}
+
       true ->
         order = Enum.count(nodes, fn {_i, n} -> n.parent_id == new_parent_id end)
         new_nodes = Map.put(nodes, id, %{nodes[id] | parent_id: new_parent_id, order: order})
@@ -256,10 +264,45 @@ defmodule Ezagent.Behavior.Mindmap do
 
   @doc false
   def handle_set_stage(%{id: id, stage: stage}, ctx) do
+    t = tree(ctx)
+
     case parse_enum(stage, @stages) do
-      {:ok, s} -> update_node(ctx, id, &%{&1 | stage: s})
-      :error -> {:error, {:invalid_stage, stage}}
+      {:ok, s} ->
+        cond do
+          not Map.has_key?(t.nodes, id) ->
+            {:error, :node_not_found}
+
+          # R1 插入规则：阶段顺序固定，深入只能往后——节点 stage 必须 ≥ 父、≤ 每个子。
+          # 例："issue 后不能插 feature" = feature(5) < issue(6)，做 issue 子节点时拒。
+          not stage_fits?(t.nodes, id, s) ->
+            {:error, {:stage_order_violation, stage}}
+
+          true ->
+            update_node(ctx, id, &%{&1 | stage: s})
+        end
+
+      :error ->
+        {:error, {:invalid_stage, stage}}
     end
+  end
+
+  # 节点 stage 的链上索引（@stages 顺序即固定链；找不到当 0）。
+  defp stage_index(s), do: Enum.find_index(@stages, &(&1 == s)) || 0
+
+  # R1：node.stage ∈ [父 stage, 每个子 stage]——父≤自己≤子，保证整链单调不回退。
+  defp stage_fits?(nodes, id, s) do
+    node = nodes[id]
+    si = stage_index(s)
+
+    parent_ok =
+      node.parent_id == nil or stage_index(nodes[node.parent_id].stage) <= si
+
+    children_ok =
+      nodes
+      |> Enum.filter(fn {_i, n} -> n.parent_id == id end)
+      |> Enum.all?(fn {_i, c} -> si <= stage_index(c.stage) end)
+
+    parent_ok and children_ok
   end
 
   # ---------------------------------------------------------------

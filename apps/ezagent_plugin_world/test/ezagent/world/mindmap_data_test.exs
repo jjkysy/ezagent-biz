@@ -19,7 +19,7 @@ defmodule Ezagent.World.MindmapDataTest do
     d = fn action, args -> disp(uri, action, args, caller, caps) end
     {:ok, %{id: "n1"}} = d.(:add_node, %{parent_id: "", title: "根"})
     {:ok, %{id: "n2"}} = d.(:add_node, %{parent_id: "n1", title: "功能"})
-    {:ok, %{}} = d.(:set_stage, %{id: "n2", stage: "dev"})
+    {:ok, %{}} = d.(:set_stage, %{id: "n2", stage: "feature"})
     {:ok, %{}} = d.(:claim_node, %{id: "n2"})
     {:ok, %{}} = d.(:set_status, %{id: "n2", status: "doing"})
 
@@ -32,7 +32,7 @@ defmodule Ezagent.World.MindmapDataTest do
 
     n2 = tree["nodes"]["n2"]
     assert n2["title"] == "功能"
-    assert n2["stage"] == "dev", "atom 应转 string"
+    assert n2["stage"] == "feature", "atom 应转 string"
     assert n2["status"] == "doing"
     assert n2["owner"] == "entity://system/user/admin"
     assert is_list(n2["artifacts"]) and is_list(n2["metrics"])
@@ -46,7 +46,7 @@ defmodule Ezagent.World.MindmapDataTest do
   test "state_for 列表页（entity_uri=nil）给 stages/statuses/instances", %{ctx: ctx} do
     state = MindmapData.state_for(%{component: "mindmap", entity_uri: nil}, ctx)
     assert state["mindmap_uri"] == nil
-    assert "dev" in state["stages"] and "doing" in state["statuses"]
+    assert "feature" in state["stages"] and "doing" in state["statuses"]
     assert is_list(state["instances"])
   end
 

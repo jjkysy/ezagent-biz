@@ -2,7 +2,7 @@ import {useEffect, useState} from "react"
 import {ExternalLink, Hand, Paperclip, Pencil, Plus, RefreshCw, Send, Target, Trash2} from "lucide-react"
 
 import {Button} from "./ui/primitives"
-import {MindmapCanvas} from "./MindmapCanvas"
+import {MindmapCanvas, STAGE_LABEL, STAGES} from "./MindmapCanvas"
 
 const STATUS_ICON: Record<string, string> = {unassigned: "○", claimed: "◔", doing: "◑", done: "●"}
 
@@ -90,7 +90,7 @@ function MindmapList({state, onAction}: {state: MindmapState; onAction: Act}) {
 function MindmapDetail({state, onAction, onShare}: {state: MindmapState; onAction: Act; onShare?: () => void}) {
   const uri = state.mindmap_uri as string
   const tree = state.tree || {nodes: {}, root_id: null}
-  const stages = state.stages || ["purpose", "value", "module", "feature", "dev", "ops"]
+  const stages = state.stages || STAGES
   const statuses = state.statuses || ["claimed", "doing", "done"]
   const instances = state.instances || []
   const [rootTitle, setRootTitle] = useState("")
@@ -196,7 +196,7 @@ function NodePanel({node, args, stages, statuses, onAction}: {
       <div className="font-medium text-foreground">{node.title}</div>
       <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
         <span>{STATUS_ICON[node.status || "unassigned"]} {node.status || "未认领"}</span>
-        {node.stage && <span className="rounded bg-muted px-1 text-primary">{node.stage}</span>}
+        {node.stage && <span className="rounded bg-muted px-1 text-primary">{STAGE_LABEL[node.stage] || node.stage}</span>}
         {owner && <span>@{owner}</span>}
       </div>
       <div className="flex flex-wrap items-center gap-1">
@@ -209,7 +209,7 @@ function NodePanel({node, args, stages, statuses, onAction}: {
         </select>
         <select className={selectCls} value="" onChange={(e) => e.target.value && onAction("mindmap.set_stage", {...args, stage: e.target.value})}>
           <option value="">阶段…</option>
-          {stages.map((s) => (<option key={s} value={s}>{s}</option>))}
+          {stages.map((s) => (<option key={s} value={s}>{STAGE_LABEL[s] || s}</option>))}
         </select>
       </div>
       <div>

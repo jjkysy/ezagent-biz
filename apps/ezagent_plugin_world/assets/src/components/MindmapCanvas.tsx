@@ -29,6 +29,21 @@ type Tree = {nodes: Record<string, Node>; root_id: string | null}
 type Act = (action: string, args: Record<string, unknown>) => void
 
 const STATUS_ICON: Record<string, string> = {unassigned: "○", claimed: "◔", doing: "◑", done: "●"}
+
+// 9 阶段固定链的中文标签 + 顺序（顺序用于插入校验提示）。
+export const STAGES = ["positioning", "metric", "pain", "anchor", "ux", "feature", "issue", "test", "pr"]
+export const STAGE_LABEL: Record<string, string> = {
+  positioning: "定位",
+  metric: "北极星",
+  pain: "痛点",
+  anchor: "认领映射",
+  ux: "线框",
+  feature: "功能卡",
+  issue: "issue",
+  test: "测试",
+  pr: "PR",
+}
+
 const NODE_W = 210
 const NODE_H = 48
 
@@ -44,7 +59,7 @@ function MmNode({data}: {data: {node: Node; id: string; selected: boolean; onSel
     >
       <Handle type="target" position={Position.Left} className="!bg-border" />
       <span className="text-muted-foreground">{STATUS_ICON[node.status || "unassigned"]}</span>
-      {node.stage && <span className="rounded bg-muted px-1 text-[10px] text-primary">{node.stage}</span>}
+      {node.stage && <span className="rounded bg-muted px-1 text-[10px] text-primary">{STAGE_LABEL[node.stage] || node.stage}</span>}
       <span className="flex-1 truncate font-medium text-foreground" title={node.title}>{node.title}</span>
       {owner && <span className="text-[10px] text-muted-foreground">@{owner}</span>}
       <button

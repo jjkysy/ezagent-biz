@@ -36,7 +36,7 @@ defmodule Ezagent.Behavior.MindmapTest do
   end
 
   describe "add_node（默认字段 + 授权）" do
-    test "admin 建根：默认 stage=:purpose / owner=nil / status=:unassigned / 空挂载" do
+    test "admin 建根：默认 stage=:positioning / owner=nil / status=:unassigned / 空挂载" do
       assert {:ok, %{id: "n1"}, e} =
                Mindmap.handle_add_node(
                  %{parent_id: "", title: "根"},
@@ -44,7 +44,7 @@ defmodule Ezagent.Behavior.MindmapTest do
                )
 
       n = committed(e).nodes["n1"]
-      assert n.stage == :purpose and n.owner == nil and n.status == :unassigned
+      assert n.stage == :positioning and n.owner == nil and n.status == :unassigned
       assert n.artifacts == [] and n.metrics == []
     end
 
@@ -62,7 +62,7 @@ defmodule Ezagent.Behavior.MindmapTest do
       assert {:ok, %{id: _}, e} =
                Mindmap.handle_add_node(%{parent_id: r, title: "x"}, admin_ctx(t))
 
-      assert committed(e).nodes |> Map.values() |> Enum.all?(&(&1.stage == :purpose))
+      assert committed(e).nodes |> Map.values() |> Enum.all?(&(&1.stage == :positioning))
 
       assert {:error, :forbidden} =
                Mindmap.handle_add_node(
@@ -206,11 +206,26 @@ defmodule Ezagent.Behavior.MindmapTest do
   describe "set_stage / import 授权" do
     test "set_stage 改阶段（owner/admin）", %{} do
       {t, _r, c} = seed()
-      assert {:ok, %{}, e} = Mindmap.handle_set_stage(%{id: c, stage: "dev"}, admin_ctx(t))
-      assert committed(e).nodes[c].stage == :dev
+      assert {:ok, %{}, e} = Mindmap.handle_set_stage(%{id: c, stage: "feature"}, admin_ctx(t))
+      assert committed(e).nodes[c].stage == :feature
 
       assert {:error, {:invalid_stage, "nope"}} =
                Mindmap.handle_set_stage(%{id: c, stage: "nope"}, admin_ctx(t))
+    end
+
+    test "set_stage R1 插入规则：issue 后不能插 feature（子 stage 不能早于父）", %{} do
+      {t, _r, c} = seed()
+      {:ok, _, e1} = Mindmap.handle_set_stage(%{id: c, stage: "issue"}, admin_ctx(t))
+      t1 = committed(e1)
+      {:ok, %{id: gc}, e2} = Mindmap.handle_add_node(%{parent_id: c, title: "孙"}, admin_ctx(t1))
+      t2 = committed(e2)
+
+      # gc 父=c(issue=6)；设 feature(5) < 6 → 拒（issue 后不能插 feature）
+      assert {:error, {:stage_order_violation, "feature"}} =
+               Mindmap.handle_set_stage(%{id: gc, stage: "feature"}, admin_ctx(t2))
+
+      # gc 设 pr(8) ≥ 6 → 允许（往后插合法）
+      assert {:ok, %{}, _} = Mindmap.handle_set_stage(%{id: gc, stage: "pr"}, admin_ctx(t2))
     end
 
     test "import_markmap 仅 admin", %{} do

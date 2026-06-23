@@ -11,7 +11,7 @@ defmodule Ezagent.World.MindmapData do
 
   alias Ezagent.Invocation
 
-  @stages ~w(purpose value module feature dev ops)
+  @stages ~w(positioning metric pain anchor ux feature issue test pr)
   @statuses ~w(claimed doing done)
 
   @doc "为 mindmap 路由（列表页 entity_uri=nil / 详情页带 uri）构建前端 state。"
