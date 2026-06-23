@@ -123,8 +123,8 @@ defmodule Ezagent.World.MindmapData do
       })
 
     case result do
-      {:ok, %{tree: %{nodes: nodes, root_id: root}}} ->
-        %{"nodes" => jsonable_nodes(nodes), "root_id" => root}
+      {:ok, %{tree: %{nodes: nodes, root_id: root} = t}} ->
+        %{"nodes" => jsonable_nodes(nodes, t), "root_id" => root}
 
       _ ->
         %{"nodes" => %{}, "root_id" => nil}
@@ -142,12 +142,12 @@ defmodule Ezagent.World.MindmapData do
 
   # --- helpers --------------------------------------------------------
 
-  defp jsonable_nodes(nodes) when is_map(nodes) do
-    Map.new(nodes, fn {id, n} -> {id, jsonable_node(n)} end)
+  defp jsonable_nodes(nodes, tree) when is_map(nodes) do
+    Map.new(nodes, fn {id, n} -> {id, jsonable_node(n, id, tree)} end)
   end
 
-  defp jsonable_node(n) do
-    %{
+  defp jsonable_node(n, id, tree) do
+    base = %{
       "parent_id" => Map.get(n, :parent_id),
       "title" => Map.get(n, :title),
       "order" => Map.get(n, :order),
@@ -156,6 +156,24 @@ defmodule Ezagent.World.MindmapData do
       "status" => to_str(Map.get(n, :status)),
       "artifacts" => Enum.map(Map.get(n, :artifacts, []), &jsonable_map/1),
       "metrics" => Enum.map(Map.get(n, :metrics, []), &jsonable_map/1)
+    }
+
+    # 片5：pr 节点附 CI 评价摘要（纯读，前端 ci 徽章 + 片6 出 PR 评论用）
+    if Map.get(n, :stage) == :pr do
+      Map.put(base, "ci", ci_summary(tree, id))
+    else
+      base
+    end
+  end
+
+  defp ci_summary(tree, id) do
+    v = EzagentPluginMindmap.Ci.check_pr_gate(tree, id)
+
+    %{
+      "score" => v.score,
+      "max" => v.max,
+      "markdown" => v.markdown,
+      "criteria" => Enum.map(v.criteria, fn c -> %{"name" => c.name, "ok" => c.ok} end)
     }
   end
 

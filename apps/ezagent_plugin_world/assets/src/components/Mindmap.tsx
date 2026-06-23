@@ -15,6 +15,7 @@ type Node = {
   status: string | null
   artifacts?: Record<string, unknown>[]
   metrics?: Record<string, unknown>[]
+  ci?: {score: number; max: number; markdown: string; criteria: {name: string; ok: boolean}[]}
 }
 
 type Tree = {nodes: Record<string, Node>; root_id: string | null}
@@ -235,6 +236,17 @@ function NodePanel({node, args, stages, statuses, onAction, onShareArtifact}: {
           </div>
         )
       })()}
+      {/* 片5 CI 评价：pr 节点沿祖先链算 上游done/Gherkin/issue/test绿 → 评分 + 逐条 */}
+      {node.ci && (
+        <div className="rounded-md border border-border bg-muted/30 p-2 text-xs">
+          <div className="font-semibold text-foreground">CI 评价 {node.ci.score}/{node.ci.max}</div>
+          <ul className="mt-0.5 flex flex-col gap-0.5">
+            {node.ci.criteria.map((c, i) => (
+              <li key={i} className={c.ok ? "text-green-600" : "text-amber-600"}>{c.ok ? "✓" : "○"} {c.name}</li>
+            ))}
+          </ul>
+        </div>
+      )}
       <div className="flex flex-wrap items-center gap-1">
         <Button type="button" size="sm" variant="secondary" onClick={() => onAction("mindmap.claim_node", args)}>
           <Hand className="h-3.5 w-3.5" /> 认领
