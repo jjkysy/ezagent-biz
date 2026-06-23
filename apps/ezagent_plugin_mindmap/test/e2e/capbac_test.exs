@@ -12,7 +12,7 @@ defmodule EzagentPluginMindmap.CapbacE2ETest do
     :ok = Ecto.Adapters.SQL.Sandbox.checkout(EzagentCore.Repo)
     Ecto.Adapters.SQL.Sandbox.mode(EzagentCore.Repo, {:shared, self()})
 
-    uri = Ezagent.URI.new!("entity://system/mindmap/capbac-#{System.unique_integer([:positive])}")
+    uri = Ezagent.URI.resource("system", "mindmap", "capbac-#{System.unique_integer([:positive])}")
     {:ok, _} = Ezagent.Kind.Server.start_link({Mindmap, %{uri: uri}})
     :ok = wait_ready(uri)
     %{uri: uri}

@@ -2,19 +2,18 @@ defmodule EzagentPluginMindmap.Mindmap do
   @moduledoc """
   Mindmap Kind — 思维导图实例类型（df-prd 增量 1）。
 
-  对齐 `Ezagent.Entity.Echo` 先例：`use Ezagent.Kind, pattern: :entity` 宏 +
-  `attach/1` 声明（提供编译期 action-collision / pattern 兼容检查）+ 保留 legacy
-  `behaviors/0` / `persistence/0`（`Ezagent.Kind.Server` 仍读）。
+  **数据资源 Kind**：`use Ezagent.Kind, pattern: :resource`（mindmap 是数据对象、不是
+  principal——对齐 `Ezagent.Socialware.ConfigProjection` 用 `resource://` 给数据寻址的
+  先例，而非 echo/agent 那种 `entity://`）。
 
-  实例寻址 `entity://<ws>/mindmap/<name>`。节点树存在实例 state（见
-  `Ezagent.Behavior.Mindmap`）。
-
-  增量 1 用 `:ephemeral` 持久化——往返 e2e 在同一进程内验证；跨重启的 durable
-  快照（`:persistent`）留作紧接的 fast-follow。
+  实例寻址 **`resource://<ws>/mindmap/<name>`**——经 sanctioned 的
+  `Ezagent.URI.resource(ws, "mindmap", name)` 构造（`resource/3` 的 type 段任意，过
+  uri_query.scan；`entity/3` 白名单只有 user/agent/worker、不收 mindmap）。节点树存在
+  实例 state（见 `Ezagent.Behavior.Mindmap`），`{:snapshot, :on_change}` 持久。
   """
 
   use Ezagent.Kind,
-    pattern: :entity,
+    pattern: :resource,
     type_name: :mindmap,
     supervisor: EzagentPluginMindmap.InstanceSupervisor
 

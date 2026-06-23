@@ -3,7 +3,7 @@ defmodule EzagentPluginMindmap.Application do
   Mindmap plugin OTP application — the `Ezagent.Plugin` contract module.
 
   df-prd 增量 1：思维导图双向打通。思维导图 = 一个 `EzagentPluginMindmap.Mindmap`
-  Kind 实例（`entity://<ws>/mindmap/<name>`），节点树住在它的 state（真相源）；
+  Kind 实例（`resource://<ws>/mindmap/<name>`，数据资源 Kind），节点树住在它的 state（真相源）；
   与 markmap markdown 文件双向同步。
 
   纯 plugin（路 A）：只声明 `kinds/0` / `behaviors/0` / `children/0`，框架的

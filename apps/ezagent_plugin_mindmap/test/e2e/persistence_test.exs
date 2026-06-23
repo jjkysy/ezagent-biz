@@ -13,7 +13,7 @@ defmodule EzagentPluginMindmap.PersistenceTest do
     Ecto.Adapters.SQL.Sandbox.mode(EzagentCore.Repo, {:shared, self()})
 
     uri =
-      Ezagent.URI.new!("entity://system/mindmap/persist-#{System.unique_integer([:positive])}")
+      Ezagent.URI.resource("system", "mindmap", "persist-#{System.unique_integer([:positive])}")
 
     %{uri: uri}
   end

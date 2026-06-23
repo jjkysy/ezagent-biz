@@ -8,7 +8,7 @@ defmodule Ezagent.World.MindmapDataTest do
     :ok = Ecto.Adapters.SQL.Sandbox.checkout(EzagentCore.Repo)
     Ecto.Adapters.SQL.Sandbox.mode(EzagentCore.Repo, {:shared, self()})
 
-    uri = Ezagent.URI.new!("entity://system/mindmap/wd-#{System.unique_integer([:positive])}")
+    uri = Ezagent.URI.resource("system", "mindmap", "wd-#{System.unique_integer([:positive])}")
     {:ok, _} = Ezagent.Kind.Server.start_link({EzagentPluginMindmap.Mindmap, %{uri: uri}})
     :ok = wait_ready(uri)
 

@@ -67,7 +67,7 @@ defmodule EzagentPluginMindmap.MiroLiveTest do
     Ecto.Adapters.SQL.Sandbox.mode(EzagentCore.Repo, {:shared, self()})
 
     uri =
-      Ezagent.URI.new!("entity://system/mindmap/live-in-#{System.unique_integer([:positive])}")
+      Ezagent.URI.resource("system", "mindmap", "live-in-#{System.unique_integer([:positive])}")
 
     {:ok, _} = Ezagent.Kind.Server.start_link({EzagentPluginMindmap.Mindmap, %{uri: uri}})
     :ok = wait_ready(uri)
@@ -112,7 +112,7 @@ defmodule EzagentPluginMindmap.MiroLiveTest do
     :ok = Ecto.Adapters.SQL.Sandbox.checkout(EzagentCore.Repo)
     Ecto.Adapters.SQL.Sandbox.mode(EzagentCore.Repo, {:shared, self()})
 
-    uri = Ezagent.URI.new!("entity://system/mindmap/rich-#{System.unique_integer([:positive])}")
+    uri = Ezagent.URI.resource("system", "mindmap", "rich-#{System.unique_integer([:positive])}")
     {:ok, _} = Ezagent.Kind.Server.start_link({EzagentPluginMindmap.Mindmap, %{uri: uri}})
     :ok = wait_ready(uri)
 
@@ -149,7 +149,7 @@ defmodule EzagentPluginMindmap.MiroLiveTest do
     setup do
       :ok = Ecto.Adapters.SQL.Sandbox.checkout(EzagentCore.Repo)
       Ecto.Adapters.SQL.Sandbox.mode(EzagentCore.Repo, {:shared, self()})
-      uri = Ezagent.URI.new!("entity://system/mindmap/poll-#{System.unique_integer([:positive])}")
+      uri = Ezagent.URI.resource("system", "mindmap", "poll-#{System.unique_integer([:positive])}")
       {:ok, _} = Ezagent.Kind.Server.start_link({EzagentPluginMindmap.Mindmap, %{uri: uri}})
       :ok = wait_ready(uri)
 

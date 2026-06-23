@@ -49,6 +49,8 @@ defmodule EzagentWeb.Router do
       live "/workspaces/:name", WorldLive
       live "/plugins", WorldLive
       live "/plugins/feishu/bindings", WorldLive
+      live "/plugins/mindmap", WorldLive
+      live "/plugins/mindmap/:uri", WorldLive
       live "/plugins/auto/:kind", WorldLive
       live "/plugins/auto/:kind/:uri", WorldLive
       live "/profile", WorldLive

@@ -142,7 +142,10 @@ defmodule Ezagent.World.MindmapActions do
         {:noreply, assign(socket, :last_dispatch_status, "error:invalid_workspace")}
 
       true ->
-        uri = Ezagent.URI.entity(ws_host, :mindmap, clean)
+        # mindmap 是数据资源 Kind（`pattern: :resource`）→ `resource://<ws>/mindmap/<name>`，
+        # 经 sanctioned `URI.resource/3`（type 段任意，过 uri_query.scan）。经
+        # InstanceSupervisor 直起（对齐 e2e/测试的 spawn 路径）。
+        uri = Ezagent.URI.resource(ws_host, "mindmap", clean)
         spawn_result = spawn_mindmap(uri)
 
         case spawn_result do
@@ -210,10 +213,10 @@ defmodule Ezagent.World.MindmapActions do
 
   defp uri_name(%URI{} = uri), do: uri |> URI.to_string() |> String.split("/") |> List.last()
 
-  # sanctioned 读 workspace 名（不裸 match `%URI{host:}`，过 uri_query.scan）。
+  # sanctioned 读 workspace 名（`workspace_name/1` 返 `{:ok, name}` | `:error`）。
   defp workspace_host(%URI{} = uri) do
     case Ezagent.URI.workspace_name(uri) do
-      name when is_binary(name) and name != "" -> name
+      {:ok, name} when is_binary(name) and name != "" -> name
       _ -> nil
     end
   end

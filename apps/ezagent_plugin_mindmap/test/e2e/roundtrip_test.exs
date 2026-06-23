@@ -14,7 +14,7 @@ defmodule EzagentPluginMindmap.RoundtripTest do
     Ecto.Adapters.SQL.Sandbox.mode(EzagentCore.Repo, {:shared, self()})
 
     uri =
-      Ezagent.URI.new!("entity://system/mindmap/e2e-#{System.unique_integer([:positive])}")
+      Ezagent.URI.resource("system", "mindmap", "e2e-#{System.unique_integer([:positive])}")
 
     {:ok, _pid} = Ezagent.Kind.Server.start_link({Mindmap, %{uri: uri}})
     :ok = wait_until_ready(uri)
