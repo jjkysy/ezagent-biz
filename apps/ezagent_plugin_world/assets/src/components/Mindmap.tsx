@@ -31,10 +31,8 @@ export type MindmapState = {
 
 type Act = (action: string, args: Record<string, unknown>) => void
 
-const STATUS_ICON: Record<string, string> = {unassigned: "○", claimed: "◔", doing: "◑", done: "●"}
 const inputCls =
   "rounded-md border border-border bg-background px-2.5 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-const selectCls = "rounded-md border border-border bg-background px-1.5 py-1 text-xs text-muted-foreground"
 
 export function Mindmap({state, onAction = () => undefined}: {state: MindmapState; onAction?: Act}) {
   return state.mindmap_uri ? (
@@ -113,7 +111,7 @@ function MindmapDetail({state, onAction}: {state: MindmapState; onAction: Act}) 
         </div>
       ) : (
         // 可拖动视觉树（react-flow + dagre 自动布局，像 Miro/xmind）。
-        <div className="min-h-[460px] flex-1 overflow-hidden rounded-md border border-border">
+        <div className="overflow-hidden rounded-md border border-border">
           <MindmapCanvas uri={uri} tree={tree} stages={stages} statuses={statuses} onAction={onAction} />
         </div>
       )}

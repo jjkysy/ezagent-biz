@@ -116,7 +116,7 @@ export function MindmapCanvas({uri, tree, stages, statuses, onAction}: {
   const args = selectedId ? {mindmap_uri: uri, id: selectedId} : {}
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex flex-col">
       {/* 选中节点工具栏 */}
       {sel && (
         <div className="flex flex-wrap items-center gap-1.5 border-b border-border bg-muted/40 px-3 py-1.5 text-sm">
@@ -137,7 +137,8 @@ export function MindmapCanvas({uri, tree, stages, statuses, onAction}: {
           <button type="button" title="删除（含子树）" onClick={() => onAction("mindmap.remove_node", args)} className="rounded p-1 text-destructive hover:bg-muted"><Trash2 className="h-3.5 w-3.5" /></button>
         </div>
       )}
-      <div className="min-h-[420px] flex-1">
+      {/* react-flow 必须有显式尺寸——flex/百分比在 mount 时为 0 会让 fitView 失效、节点不可见 */}
+      <div style={{height: 480, width: "100%"}}>
         <ReactFlow
           nodes={nodes}
           edges={edges}
@@ -145,6 +146,8 @@ export function MindmapCanvas({uri, tree, stages, statuses, onAction}: {
           onEdgesChange={onEdgesChange}
           nodeTypes={nodeTypes}
           fitView
+          fitViewOptions={{padding: 0.2, maxZoom: 1}}
+          minZoom={0.2}
           proOptions={{hideAttribution: true}}
         >
           <Background />
