@@ -51,3 +51,6 @@ docs/phase-specs/phase3/artifacts/phase3-multi-agent*
 __pycache__/
 *.pyc
 .worktrees/
+
+# rh personal scratch (chenruihua) — not for the repo
+docs/rh/
