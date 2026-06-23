@@ -66,13 +66,25 @@ defmodule Ezagent.World.MindmapData do
   def session_board(%URI{} = session_uri, ctx) do
     uri = session_mindmap_uri(session_uri)
     ensure_spawned(uri)
+    Map.merge(board_state(uri, ctx), %{"stages" => @stages, "statuses" => @statuses})
+  end
 
+  @doc "选中某个 mindmap 的 state：`mindmap_uri` + `tree` + 全量 `instances`（侧边栏切换用）。"
+  @spec board_state(URI.t(), map()) :: map()
+  def board_state(%URI{} = uri, ctx) do
     %{
       "mindmap_uri" => encode_uri(uri),
       "tree" => read_tree(uri, ctx),
-      "stages" => @stages,
-      "statuses" => @statuses
+      "instances" => list_instances(),
+      "last_dispatch_status" => "ok"
     }
+  end
+
+  @doc "确保某 mindmap Kind 起活（侧边栏选已有导图时用）。"
+  @spec ensure_board(URI.t()) :: :ok
+  def ensure_board(%URI{} = uri) do
+    ensure_spawned(uri)
+    :ok
   end
 
   @doc false

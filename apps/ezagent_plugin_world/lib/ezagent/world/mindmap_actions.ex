@@ -76,6 +76,9 @@ defmodule Ezagent.World.MindmapActions do
   def handle_dispatch(socket, "mindmap.create", %{"name" => name}) when is_binary(name),
     do: create_mindmap(socket, name)
 
+  def handle_dispatch(socket, "mindmap.select_board", %{"mindmap_uri" => u}),
+    do: select_board(socket, u)
+
   def handle_dispatch(socket, "mindmap.sync_miro", %{"mindmap_uri" => u}),
     do: sync_miro(socket, u)
 
@@ -178,14 +181,32 @@ defmodule Ezagent.World.MindmapActions do
 
         case spawn_result do
           ok when ok in [:ok, :already] ->
+            # 留在 session 子视图：把新建的导图作为选中 board 推回（不再 push_patch 离开）。
             {:noreply,
              socket
              |> assign(:last_dispatch_status, "ok")
-             |> push_patch(to: "/plugins/mindmap/#{URI.encode_www_form(URI.to_string(uri))}")}
+             |> push_event("world:state", MindmapData.board_state(uri, read_ctx(socket)))}
 
           {:error, reason} ->
             {:noreply, assign(socket, :last_dispatch_status, "error:#{reason(reason)}")}
         end
+    end
+  end
+
+  # --- 侧边栏选另一张导图：起活 + 推该 board 的 tree -----------------------
+
+  defp select_board(socket, uri_str) do
+    case parse(uri_str) do
+      %URI{} = uri ->
+        :ok = MindmapData.ensure_board(uri)
+
+        {:noreply,
+         socket
+         |> assign(:last_dispatch_status, "ok")
+         |> push_event("world:state", MindmapData.board_state(uri, read_ctx(socket)))}
+
+      :error ->
+        {:noreply, assign(socket, :last_dispatch_status, "error:bad_mindmap_uri")}
     end
   end
 
@@ -210,6 +231,14 @@ defmodule Ezagent.World.MindmapActions do
       caller: socket.assigns.current_entity_uri,
       caps: Map.get(socket.assigns, :current_caps, MapSet.new()),
       reply: {:caller_inbox, self()}
+    }
+  end
+
+  # read-side ctx（caller_uri/caller_caps）给 MindmapData.read_tree/board_state。
+  defp read_ctx(socket) do
+    %{
+      caller_uri: socket.assigns.current_entity_uri,
+      caller_caps: Map.get(socket.assigns, :current_caps, MapSet.new())
     }
   end
 
