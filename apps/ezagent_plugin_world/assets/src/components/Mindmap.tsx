@@ -1,7 +1,8 @@
-import React, {useMemo, useState} from "react"
-import {ExternalLink, Hand, Paperclip, Pencil, Plus, RefreshCw, Target, Trash2} from "lucide-react"
+import React, {useState} from "react"
+import {ExternalLink, Plus, RefreshCw} from "lucide-react"
 
 import {Button} from "./ui/primitives"
+import {MindmapCanvas} from "./MindmapCanvas"
 
 type Node = {
   parent_id: string | null
@@ -43,49 +44,41 @@ export function Mindmap({state, onAction = () => undefined}: {state: MindmapStat
   )
 }
 
+// 插件配置页 = 只配 Miro 凭证（不在这编辑导图——编辑在会话内 Mindmap 子视图）。
 function MindmapList({state, onAction}: {state: MindmapState; onAction: Act}) {
-  const [name, setName] = useState("")
-  const instances = state.instances || []
+  const [token, setToken] = useState("")
+  const [board, setBoard] = useState(state.miro?.board_id || "")
+  const configured = state.miro?.configured
   return (
-    <div className="flex flex-col gap-4 p-6">
+    <div className="flex max-w-2xl flex-col gap-4 p-6">
       <div>
         <h2 className="text-lg font-semibold text-foreground">思维导图 · 配置</h2>
-        <p className="text-sm text-muted-foreground">每张导图是产品全链路的拓扑骨架；<strong>建树/认领/编辑在会话(session)里的 Mindmap 子视图</strong>，本页是插件配置。</p>
+        <p className="text-sm text-muted-foreground">配置 Miro 镜像凭证。<strong>建树/认领/编辑在会话(session)里的 Mindmap 子视图</strong>，本页只配置。</p>
       </div>
-      <div className="rounded-md border border-border bg-card p-3 text-sm">
+      <div className="flex flex-col gap-3 rounded-md border border-border bg-card p-4">
         <div className="flex items-center gap-2">
-          <span className="font-medium text-foreground">Miro 镜像</span>
-          {state.miro?.configured ? (
+          <span className="font-medium text-foreground">Miro 凭证</span>
+          {configured ? (
             <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-green-600 dark:text-green-400">已配置 ✓</span>
           ) : (
             <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">未配置</span>
           )}
         </div>
-        <p className="mt-1 text-xs text-muted-foreground">
-          {state.miro?.configured
-            ? "已连接 Miro，会话内可一键推送。"
-            : "凭证填在 system://credentials/miro.yaml（节点级，同 feishu app 凭证）。不配也能用，只是不同步。"}
-        </p>
+        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+          Access Token
+          <input type="password" className={`${inputCls} w-full`} placeholder="粘贴 Miro access token" value={token} onChange={(e) => setToken(e.target.value)} />
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+          Board ID（可选，留空则每次自动新建板）
+          <input className={`${inputCls} w-full`} placeholder="board id" value={board} onChange={(e) => setBoard(e.target.value)} />
+        </label>
+        <div>
+          <Button type="button" size="sm" onClick={() => token.trim() && onAction("mindmap.save_miro_creds", {access_token: token.trim(), board_id: board.trim()})}>
+            保存凭证
+          </Button>
+        </div>
+        <p className="text-xs text-muted-foreground">凭证存到 system://credentials/miro.yaml（节点级，0600，仅 admin 可改）。不配也能用，只是会话内不同步。</p>
       </div>
-      <div className="flex gap-2">
-        <input className={`${inputCls} w-72`} placeholder="新建导图名称（如 product-2026）" value={name} onChange={(e) => setName(e.target.value)} />
-        <Button type="button" size="sm" onClick={() => name.trim() && (onAction("mindmap.create", {name: name.trim()}), setName(""))}>
-          <Plus className="h-4 w-4" /> 新建
-        </Button>
-      </div>
-      {instances.length === 0 ? (
-        <p className="text-sm text-muted-foreground">还没有导图，先新建一个。</p>
-      ) : (
-        <ul className="flex flex-col gap-1">
-          {instances.map((i) => (
-            <li key={i.uri}>
-              <a className="text-sm text-primary hover:underline" href={i.path}>
-                {i.name} <span className="text-muted-foreground">— {i.uri}</span>
-              </a>
-            </li>
-          ))}
-        </ul>
-      )}
       <Status state={state} />
     </div>
   )
@@ -98,17 +91,8 @@ function MindmapDetail({state, onAction}: {state: MindmapState; onAction: Act}) 
   const statuses = state.statuses || ["claimed", "doing", "done"]
   const [rootTitle, setRootTitle] = useState("")
 
-  const childrenOf = useMemo(() => {
-    const map: Record<string, string[]> = {}
-    for (const [id, n] of Object.entries(tree.nodes)) {
-      ;(map[n.parent_id || "__root__"] ||= []).push(id)
-    }
-    for (const k of Object.keys(map)) map[k].sort((a, b) => (tree.nodes[a].order || 0) - (tree.nodes[b].order || 0))
-    return map
-  }, [tree])
-
   return (
-    <div className="flex flex-col gap-3 p-5">
+    <div className="flex h-full flex-col gap-3 p-5">
       <div className="flex items-center justify-between">
         <h2 className="text-base font-semibold text-foreground">思维导图 · {uri.split("/").pop()}</h2>
         <Button type="button" size="sm" variant="secondary" onClick={() => onAction("mindmap.sync_miro", {mindmap_uri: uri})}>
@@ -128,95 +112,13 @@ function MindmapDetail({state, onAction}: {state: MindmapState; onAction: Act}) 
           </Button>
         </div>
       ) : (
-        <ul className="mt-1 flex flex-col">
-          <NodeRow id={tree.root_id} tree={tree} childrenOf={childrenOf} uri={uri} stages={stages} statuses={statuses} onAction={onAction} depth={0} />
-        </ul>
+        // 可拖动视觉树（react-flow + dagre 自动布局，像 Miro/xmind）。
+        <div className="min-h-[460px] flex-1 overflow-hidden rounded-md border border-border">
+          <MindmapCanvas uri={uri} tree={tree} stages={stages} statuses={statuses} onAction={onAction} />
+        </div>
       )}
       <Status state={state} />
     </div>
-  )
-}
-
-function IconBtn({title, onClick, children}: {title: string; onClick: () => void; children: React.ReactNode}) {
-  return (
-    <button type="button" title={title} onClick={onClick} className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground">
-      {children}
-    </button>
-  )
-}
-
-function NodeRow({
-  id, tree, childrenOf, uri, stages, statuses, onAction, depth,
-}: {
-  id: string
-  tree: Tree
-  childrenOf: Record<string, string[]>
-  uri: string
-  stages: string[]
-  statuses: string[]
-  onAction: Act
-  depth: number
-}) {
-  const n = tree.nodes[id]
-  const [childTitle, setChildTitle] = useState("")
-  const [adding, setAdding] = useState(false)
-  if (!n) return null
-  const kids = childrenOf[id] || []
-  const owner = n.owner ? n.owner.split("/").pop() : null
-  const args = {mindmap_uri: uri, id}
-
-  return (
-    <li style={{marginLeft: depth * 18}} className={depth ? "border-l border-border pl-3" : ""}>
-      <div className="flex flex-wrap items-center gap-1.5 py-1 text-sm text-foreground">
-        <span title={n.status || ""} className="text-muted-foreground">{STATUS_ICON[n.status || "unassigned"]}</span>
-        {n.stage && <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] text-primary">[{n.stage}]</span>}
-        <strong className="font-medium">{n.title}</strong>
-        {owner && <span className="text-xs text-muted-foreground">@{owner}</span>}
-        {(n.metrics?.length ?? 0) > 0 && <span className="inline-flex items-center gap-0.5 text-xs text-muted-foreground"><Target className="h-3 w-3" />{n.metrics!.length}</span>}
-        {(n.artifacts?.length ?? 0) > 0 && <span className="inline-flex items-center gap-0.5 text-xs text-muted-foreground"><Paperclip className="h-3 w-3" />{n.artifacts!.length}</span>}
-
-        <IconBtn title="认领" onClick={() => onAction("mindmap.claim_node", args)}><Hand className="h-3.5 w-3.5" /></IconBtn>
-        <select className={selectCls} value="" onChange={(e) => e.target.value && onAction("mindmap.set_status", {...args, status: e.target.value})}>
-          <option value="">状态…</option>
-          {statuses.map((s) => (<option key={s} value={s}>{s}</option>))}
-        </select>
-        <select className={selectCls} value="" onChange={(e) => e.target.value && onAction("mindmap.set_stage", {...args, stage: e.target.value})}>
-          <option value="">阶段…</option>
-          {stages.map((s) => (<option key={s} value={s}>{s}</option>))}
-        </select>
-        <IconBtn title="加子节点" onClick={() => setAdding((v) => !v)}><Plus className="h-3.5 w-3.5" /></IconBtn>
-        <IconBtn title="挂产物" onClick={() => {
-          const ref = window.prompt("产物引用（如 github PR #1）")
-          if (ref) onAction("mindmap.attach_artifact", {...args, artifact: {tool: "github", kind: "pr", ref, url: ""}})
-        }}><Paperclip className="h-3.5 w-3.5" /></IconBtn>
-        <IconBtn title="设指标" onClick={() => {
-          const name = window.prompt("指标名（如 周闭环数）")
-          if (!name) return
-          const target = window.prompt("目标值")
-          onAction("mindmap.set_metric", {...args, metric: {name, target, current: null}})
-        }}><Target className="h-3.5 w-3.5" /></IconBtn>
-        <IconBtn title="改名" onClick={() => {
-          const t = window.prompt("新标题", n.title)
-          if (t) onAction("mindmap.rename_node", {...args, title: t})
-        }}><Pencil className="h-3.5 w-3.5" /></IconBtn>
-        <IconBtn title="删除（含子树）" onClick={() => onAction("mindmap.remove_node", args)}><Trash2 className="h-3.5 w-3.5" /></IconBtn>
-      </div>
-
-      {adding && (
-        <div className="mb-1 flex gap-2">
-          <input className={inputCls} autoFocus placeholder="子节点标题" value={childTitle} onChange={(e) => setChildTitle(e.target.value)} />
-          <Button type="button" size="sm" onClick={() => childTitle.trim() && (onAction("mindmap.add_node", {mindmap_uri: uri, parent_id: id, title: childTitle.trim()}), setChildTitle(""), setAdding(false))}>加</Button>
-        </div>
-      )}
-
-      {kids.length > 0 && (
-        <ul className="flex flex-col">
-          {kids.map((cid) => (
-            <NodeRow key={cid} id={cid} tree={tree} childrenOf={childrenOf} uri={uri} stages={stages} statuses={statuses} onAction={onAction} depth={depth + 1} />
-          ))}
-        </ul>
-      )}
-    </li>
   )
 }
 

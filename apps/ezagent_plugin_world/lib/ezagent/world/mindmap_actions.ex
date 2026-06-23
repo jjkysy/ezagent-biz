@@ -79,6 +79,10 @@ defmodule Ezagent.World.MindmapActions do
   def handle_dispatch(socket, "mindmap.sync_miro", %{"mindmap_uri" => u}),
     do: sync_miro(socket, u)
 
+  def handle_dispatch(socket, "mindmap.save_miro_creds", %{"access_token" => token} = a)
+      when is_binary(token),
+      do: save_miro_creds(socket, token, Map.get(a, "board_id", ""))
+
   def handle_dispatch(socket, _action, _args),
     do: {:noreply, assign(socket, :last_dispatch_status, "error:unsupported_action")}
 
@@ -125,6 +129,30 @@ defmodule Ezagent.World.MindmapActions do
 
       :error ->
         {:noreply, assign(socket, :last_dispatch_status, "error:bad_mindmap_uri")}
+    end
+  end
+
+  # --- 保存 Miro 凭证（配置页，admin-gated）------------------------------
+
+  defp save_miro_creds(socket, token, board) do
+    cond do
+      not Ezagent.Identity.admin?(socket.assigns.current_entity_uri) ->
+        {:noreply, assign(socket, :last_dispatch_status, "error:unauthorized")}
+
+      true ->
+        case EzagentPluginMindmap.Miro.write_creds(%{access_token: token, board_id: board}) do
+          :ok ->
+            {:noreply,
+             socket
+             |> assign(:last_dispatch_status, "ok")
+             |> push_event("world:state", %{
+               "miro" => Ezagent.World.MindmapData.miro_status(),
+               "last_dispatch_status" => "ok"
+             })}
+
+          {:error, reason} ->
+            {:noreply, assign(socket, :last_dispatch_status, "error:#{reason(reason)}")}
+        end
     end
   end
 

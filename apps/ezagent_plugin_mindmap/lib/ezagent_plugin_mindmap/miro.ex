@@ -38,6 +38,38 @@ defmodule EzagentPluginMindmap.Miro do
     end
   end
 
+  @doc """
+  写 Miro 凭证到 `system://credentials/miro.yaml`（照 `Ezagent.AgentBridge.TokenStore`
+  的 sanctioned idiom：`FsResolver.path!` 解析受保护路径 → `File.write` → `chmod 0o600`）。
+  供 world 的 mindmap 配置页 UI 保存（admin-gated）。
+  """
+  @spec write_creds(%{
+          required(:access_token) => String.t(),
+          optional(:board_id) => String.t() | nil
+        }) ::
+          :ok | {:error, term()}
+  def write_creds(%{access_token: token} = creds) when is_binary(token) and token != "" do
+    board = blank_to_nil(Map.get(creds, :board_id))
+
+    body =
+      "access_token: \"#{token}\"\n" <>
+        if(board, do: "board_id: \"#{board}\"\n", else: "")
+
+    file = Ezagent.System.FsResolver.path!(Ezagent.URI.system("credentials", "miro.yaml"))
+    _ = File.mkdir_p(Path.dirname(file))
+
+    case File.write(file, body) do
+      :ok ->
+        _ = File.chmod(file, 0o600)
+        :ok
+
+      err ->
+        err
+    end
+  end
+
+  def write_creds(_), do: {:error, :access_token_required}
+
   @doc "建一块新板，返回 `{:ok, board_id}`。"
   @spec create_board(String.t(), String.t()) :: {:ok, miro_id()} | {:error, term()}
   def create_board(token, name) do
