@@ -178,9 +178,9 @@ function Flow({uri, tree, selectedId, onSelectNode, onAction}: CanvasProps) {
     if (nodesInitialized) fitView({padding: 0.2, maxZoom: 1, duration: 0})
   }, [nodesInitialized, laid, fitView])
 
-  // react-flow 必须有显式尺寸——flex/百分比在 mount 时为 0 会让 fitView 失效、节点不可见。
+  // react-flow 必须有显式尺寸——父级(画布区)现在是固定高 h-[560px]，故 100% 是确定值（非 0）。
   return (
-    <div style={{height: 480, width: "100%"}}>
+    <div style={{height: "100%", width: "100%"}}>
       <ReactFlow
         nodes={nodes}
         edges={edges}

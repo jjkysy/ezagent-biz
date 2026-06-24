@@ -183,9 +183,11 @@ function MindmapDetail({state, onAction, onShare, onShareArtifact, onUploadFile}
         </div>
       )}
 
-      {/* min-h-0：让 flex-1 真正按可用高度约束（否则左栏一长会撑高、把右侧画布滚出视野） */}
-      <div className="flex min-h-0 flex-1 gap-3 overflow-hidden">
-        {/* 侧边栏：导图列表 + 新建 + 选中节点属性（内部独立滚动，不带动画布） */}
+      {/* 画布区固定高度（不动 session 布局即可根治"左栏一长把画布滚出视野"）：
+          MindmapDetail 高度=header+这块固定高，不随左栏内容增长→外层 board 不滚→画布常驻。
+          左栏在这固定高内 overflow-y-auto 自己滚。 */}
+      <div className="flex h-[560px] gap-3 overflow-hidden">
+        {/* 侧边栏：导图列表 + 新建 + 选中节点属性（在固定高内独立滚动，不带动画布） */}
         <aside className="flex w-64 flex-shrink-0 flex-col gap-3 overflow-y-auto">
           <div className="rounded-md border border-border p-2">
             <div className="mb-1.5 text-xs font-semibold text-muted-foreground">导图</div>
