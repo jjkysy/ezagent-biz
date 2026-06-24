@@ -422,6 +422,17 @@ export function Conversation({
                 onSend(sessionUri, `${MINDMAP_CARD_TAG} 思维导图${nm ? ` · ${nm}` : ""}`, [])
               }}
               onShareArtifact={(name, url) => sessionUri && onSend(sessionUri, `${ARTIFACT_CARD_TAG} ${name} ::: ${url}`, [])}
+              onUploadFile={async (file) => {
+                if (!sessionUri) return null
+                const csrf = document.querySelector("meta[name='csrf-token']")?.getAttribute("content") || ""
+                const form = new FormData()
+                form.append("session", sessionUri)
+                form.append("file", file)
+                const res = await fetch("/world/uploads", {method: "POST", headers: {"x-csrf-token": csrf}, body: form, credentials: "same-origin"})
+                if (!res.ok) return null
+                const data = (await res.json()) as {name?: string; grant?: string}
+                return data.grant ? {grant: data.grant, name: data.name || file.name} : null
+              }}
             />
           </div>
         ) : activeView === "page" ? (

@@ -169,7 +169,7 @@ defmodule Ezagent.World.MindmapData do
       "stage" => to_str(Map.get(n, :stage)),
       "owner" => Map.get(n, :owner),
       "status" => to_str(Map.get(n, :status)),
-      "artifacts" => Enum.map(Map.get(n, :artifacts, []), &jsonable_map/1),
+      "artifacts" => Enum.map(Map.get(n, :artifacts, []), &jsonable_artifact/1),
       "metrics" => Enum.map(Map.get(n, :metrics, []), &jsonable_map/1)
     }
 
@@ -193,6 +193,30 @@ defmodule Ezagent.World.MindmapData do
   end
 
   defp jsonable_map(m) when is_map(m), do: Map.new(m, fn {k, v} -> {to_string(k), v} end)
+
+  # file 类 artifact：url 是 uploads URI(resource://<ws>/uploads/…)，签发一个下载 href
+  # (DownloadToken，同 chat 附件)，让"打开"可下载；其余 artifact 原样。
+  defp jsonable_artifact(a) do
+    base = jsonable_map(a)
+    url = base["url"]
+
+    if base["kind"] == "file" and is_binary(url) and String.starts_with?(url, "resource://") do
+      case mint_download(url) do
+        {:ok, href} -> Map.put(base, "url", href)
+        _ -> base
+      end
+    else
+      base
+    end
+  end
+
+  defp mint_download(url) do
+    with {:ok, %URI{} = uri} <- Ezagent.URI.parse(url) do
+      {:ok, "/uploads/download?token=" <> Ezagent.Uploads.DownloadToken.mint!(uri)}
+    end
+  rescue
+    _ -> :error
+  end
 
   defp to_str(nil), do: nil
   defp to_str(a) when is_atom(a), do: Atom.to_string(a)

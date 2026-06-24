@@ -38,19 +38,23 @@ type Act = (action: string, args: Record<string, unknown>) => void
 const inputCls =
   "rounded-md border border-border bg-background px-2.5 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
 
+type UploadFn = (file: File) => Promise<{grant: string; name: string} | null>
+
 export function Mindmap({
   state,
   onAction = () => undefined,
   onShare,
   onShareArtifact,
+  onUploadFile,
 }: {
   state: MindmapState
   onAction?: Act
   onShare?: () => void
   onShareArtifact?: (name: string, url: string) => void
+  onUploadFile?: UploadFn
 }) {
   return state.mindmap_uri ? (
-    <MindmapDetail state={state} onAction={onAction} onShare={onShare} onShareArtifact={onShareArtifact} />
+    <MindmapDetail state={state} onAction={onAction} onShare={onShare} onShareArtifact={onShareArtifact} onUploadFile={onUploadFile} />
   ) : (
     <MindmapList state={state} onAction={onAction} />
   )
@@ -118,7 +122,7 @@ function MindmapList({state, onAction}: {state: MindmapState; onAction: Act}) {
   )
 }
 
-function MindmapDetail({state, onAction, onShare, onShareArtifact}: {state: MindmapState; onAction: Act; onShare?: () => void; onShareArtifact?: (name: string, url: string) => void}) {
+function MindmapDetail({state, onAction, onShare, onShareArtifact, onUploadFile}: {state: MindmapState; onAction: Act; onShare?: () => void; onShareArtifact?: (name: string, url: string) => void; onUploadFile?: UploadFn}) {
   const uri = state.mindmap_uri as string
   const tree = state.tree || {nodes: {}, root_id: null}
   const stages = state.stages || STAGES
@@ -205,7 +209,7 @@ function MindmapDetail({state, onAction, onShare, onShareArtifact}: {state: Mind
           <div className="rounded-md border border-border p-2">
             <div className="mb-1.5 text-xs font-semibold text-muted-foreground">节点属性</div>
             {sel ? (
-              <NodePanel node={sel} args={nodeArgs} stages={allowedStages} statuses={statuses} onAction={onAction} onShareArtifact={onShareArtifact} />
+              <NodePanel node={sel} args={nodeArgs} stages={allowedStages} statuses={statuses} onAction={onAction} onShareArtifact={onShareArtifact} onUploadFile={onUploadFile} />
             ) : (
               <p className="text-xs text-muted-foreground">点画布里的节点查看/编辑属性。</p>
             )}
@@ -232,13 +236,14 @@ function MindmapDetail({state, onAction, onShare, onShareArtifact}: {state: Mind
 }
 
 // 选中节点的属性面板（侧边栏）：认领 / 状态 / 阶段 / 产物 / 指标 / 改名 / 删除。
-function NodePanel({node, args, stages, statuses, onAction, onShareArtifact}: {
+function NodePanel({node, args, stages, statuses, onAction, onShareArtifact, onUploadFile}: {
   node: Node
   args: Record<string, unknown>
   stages: string[]
   statuses: string[]
   onAction: Act
   onShareArtifact?: (name: string, url: string) => void
+  onUploadFile?: UploadFn
 }) {
   const owner = node.owner ? node.owner.split("/").pop() : null
   const selectCls = "rounded border border-border bg-background px-1 py-0.5 text-xs text-muted-foreground"
@@ -358,6 +363,22 @@ function NodePanel({node, args, stages, statuses, onAction, onShareArtifact}: {
             <button type="button" className="inline-flex items-center gap-1 text-primary hover:underline" onClick={() => setEditing(true)}>
               📄 加内容
             </button>
+            {onUploadFile && (
+              <label className="inline-flex cursor-pointer items-center gap-1 text-primary hover:underline">
+                <Paperclip className="h-3 w-3" /> 上传文件
+                <input
+                  type="file"
+                  className="hidden"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0]
+                    e.target.value = ""
+                    if (!file) return
+                    const r = await onUploadFile(file)
+                    if (r) onAction("mindmap.attach_upload", {...args, grant: r.grant, name: r.name})
+                  }}
+                />
+              </label>
+            )}
           </div>
         )}
       </div>

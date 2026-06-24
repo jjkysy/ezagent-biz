@@ -96,8 +96,20 @@ defmodule Ezagent.World.MindmapActions do
       when is_binary(token),
       do: save_github_creds(socket, token, Map.get(a, "repo", ""))
 
+  def handle_dispatch(
+        socket,
+        "mindmap.attach_upload",
+        %{"mindmap_uri" => u, "id" => id, "grant" => grant} = a
+      )
+      when is_binary(grant),
+      do: attach_upload(socket, u, id, grant, Map.get(a, "name", "file"))
+
   def handle_dispatch(socket, _action, _args),
     do: {:noreply, assign(socket, :last_dispatch_status, "error:unsupported_action")}
+
+  # 上传 grant 校验（同 ConversationActions 的 anti-laundering：Phoenix.Token + uri↔caller↔session）。
+  @upload_grant_salt "world_attach"
+  @upload_grant_max_age 86_400
 
   # --- 节点动作：dispatch（登录者身份）→ re-read 树 → push ----------------
 
@@ -253,6 +265,40 @@ defmodule Ezagent.World.MindmapActions do
         end
     end
   end
+
+  # --- 上传文件挂到节点（v1.5）：验 upload grant 取 uploads URI → attach_artifact ----
+
+  defp attach_upload(socket, uri_str, node_id, grant, name) do
+    caller = socket.assigns.current_entity_uri
+
+    case {parse(uri_str), verify_upload_grant(socket, grant, caller)} do
+      {%URI{}, {:ok, %URI{} = upload_uri}} ->
+        # url = uploads URI；jsonable_artifact(kind=file) 会签发下载 href
+        act(socket, uri_str, :attach_artifact, %{
+          id: node_id,
+          artifact: %{tool: "upload", kind: "file", ref: name, url: URI.to_string(upload_uri)}
+        })
+
+      {:error, _} ->
+        {:noreply, assign(socket, :last_dispatch_status, "error:bad_mindmap_uri")}
+
+      {_, _} ->
+        {:noreply, assign(socket, :last_dispatch_status, "error:bad_upload_grant")}
+    end
+  end
+
+  # 反洗：校验 grant.caller == 当前登录者（上传者=挂载者）。mindmap 节点是资源、非会话绑定，
+  # 故不强求 grant.session 匹配（会话绑定是 chat 语境，对资源节点无意义）。
+  defp verify_upload_grant(socket, grant, %URI{} = caller) do
+    caller_str = URI.to_string(caller)
+
+    case Phoenix.Token.verify(socket, @upload_grant_salt, grant, max_age: @upload_grant_max_age) do
+      {:ok, %{"uri" => u, "caller" => ^caller_str}} -> Ezagent.URI.parse(u)
+      _ -> {:error, :bad_grant}
+    end
+  end
+
+  defp verify_upload_grant(_socket, _grant, _caller), do: {:error, :no_caller}
 
   # --- 新建 mindmap（在 plugin InstanceSupervisor 下 spawn）---------------
 
