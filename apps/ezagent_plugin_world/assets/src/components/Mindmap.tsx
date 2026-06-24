@@ -2,6 +2,7 @@ import {useEffect, useState} from "react"
 import {ExternalLink, GitPullRequest, Hand, Paperclip, Pencil, Plus, RefreshCw, Scissors, Send, Target, Trash2} from "lucide-react"
 
 import {Button} from "./ui/primitives"
+import {ExcalidrawModal} from "./ExcalidrawModal"
 import {MindmapCanvas, STAGE_LABEL, STAGES, gateVerdict} from "./MindmapCanvas"
 
 const STATUS_ICON: Record<string, string> = {unassigned: "○", claimed: "◔", doing: "◑", done: "●"}
@@ -257,6 +258,8 @@ function NodePanel({node, args, stages, statuses, onAction, onShareArtifact, onU
   const [editing, setEditing] = useState(false)
   const [cName, setCName] = useState("")
   const [cBody, setCBody] = useState("")
+  // 内嵌 excalidraw 画板：{initial: 已有scene或null, readOnly}；null=不开
+  const [excal, setExcal] = useState<{initial: string | null; readOnly: boolean} | null>(null)
   return (
     <div className="flex flex-col gap-2 text-sm">
       <div className="font-medium text-foreground">{node.title}</div>
@@ -316,7 +319,13 @@ function NodePanel({node, args, stages, statuses, onAction, onShareArtifact, onU
               <li key={i} className="flex items-center gap-1.5">
                 <Paperclip className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
                 <span className="flex-1 truncate text-foreground" title={a.content || name}>{name}</span>
-                {a.content && <span title={a.content}>📄</span>}
+                {a.kind === "excalidraw" && a.content ? (
+                  <button type="button" className="text-primary hover:underline" onClick={() => setExcal({initial: a.content || null, readOnly: true})}>
+                    看图
+                  </button>
+                ) : (
+                  a.content && <span title={a.content}>📄</span>
+                )}
                 {a.url && (
                   <a href={a.url} target="_blank" rel="noreferrer" className="text-primary hover:underline">打开</a>
                 )}
@@ -391,9 +400,20 @@ function NodePanel({node, args, stages, statuses, onAction, onShareArtifact, onU
                 />
               </label>
             )}
+            <button type="button" className="inline-flex items-center gap-1 text-primary hover:underline" onClick={() => setExcal({initial: null, readOnly: false})}>
+              ✏️ 画图
+            </button>
           </div>
         )}
       </div>
+      {excal && (
+        <ExcalidrawModal
+          initial={excal.initial}
+          readOnly={excal.readOnly}
+          onSave={(json) => onAction("mindmap.attach_artifact", {...args, artifact: {tool: "excalidraw", kind: "excalidraw", ref: "线框图", content: json}})}
+          onClose={() => setExcal(null)}
+        />
+      )}
       <div className="flex flex-wrap gap-2 border-t border-border pt-2 text-xs">
         <button
           type="button"

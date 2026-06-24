@@ -8,6 +8,7 @@
     "check:mounts": "node scripts/check-mounts.mjs"
   },
   "dependencies": {
+    "@excalidraw/excalidraw": "^0.18.1",
     "@vitejs/plugin-react": "latest",
     "@xyflow/react": "^12.11.1",
     "class-variance-authority": "latest",
