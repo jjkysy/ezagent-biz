@@ -126,7 +126,7 @@ defmodule Ezagent.Behavior.Kanban do
     returns: %{},
     caps: [:drop_subtree],
     modes: [:call],
-    description: "砍子树(指标不达标 drop)+ 反哺最近 pain 祖先记一笔"
+    description: "砍子树(指标不达标 drop)+ 记进图级别 drop 历史(:drops, 全图属性)"
   )
 
   action(:get_tree,
