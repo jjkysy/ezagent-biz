@@ -2,11 +2,11 @@ import React from "react"
 import {Bug, ChevronUp, Maximize2, MessageSquare, Network, Paperclip, Plus, RotateCcw, Route, Send, TerminalSquare, UserPlus, X} from "lucide-react"
 
 import {Button} from "./ui/primitives"
-import {Mindmap} from "./Mindmap"
+import {Kanban} from "./Kanban"
 import {PtyTerminalSurface} from "./PtyTerminal"
 
-// chat 里 mindmap 卡片消息的 sentinel 前缀（分享时发，气泡识别后渲染成可点卡片）。
-const MINDMAP_CARD_TAG = "[[mindmap]]"
+// chat 里 kanban 卡片消息的 sentinel 前缀（分享时发，气泡识别后渲染成可点卡片）。
+const KANBAN_CARD_TAG = "[[kanban]]"
 // 单条 attachment 卡片：`[[artifact]] 名称 ::: url`，气泡渲染成可点卡片，点击打开 url。
 const ARTIFACT_CARD_TAG = "[[artifact]]"
 
@@ -94,7 +94,7 @@ type Props = {
   onInvite: (sessionUri: string, member: string) => void
   onPtyInput: (bytes: string) => void
   onPtyResize: (size: {cols: number; rows: number}) => void
-  onMindmapAction: (action: string, args: Record<string, unknown>) => void
+  onKanbanAction: (action: string, args: Record<string, unknown>) => void
   onServerEvent?: (event: string, callback: (payload: unknown) => void) => void
 }
 
@@ -117,7 +117,7 @@ export function Conversation({
   onInvite,
   onPtyInput,
   onPtyResize,
-  onMindmapAction,
+  onKanbanAction,
   onServerEvent,
 }: Props) {
   const sessionUri = state.session_uri || ""
@@ -127,8 +127,8 @@ export function Conversation({
   const activeView =
     state.active_view === "pty"
       ? "pty"
-      : state.active_view === "mindmap"
-        ? "mindmap"
+      : state.active_view === "kanban"
+        ? "kanban"
         : state.active_view === "page"
           ? "page"
           : "chat"
@@ -366,7 +366,7 @@ export function Conversation({
                 <TerminalSquare aria-hidden="true" className="h-[15px] w-[15px]" />
                 PTY
               </button>
-              <button type="button" className={segmentClass(activeView === "mindmap")} onClick={() => sessionUri && onSwitchView(sessionUri, "mindmap")} aria-label="Show mindmap">
+              <button type="button" className={segmentClass(activeView === "kanban")} onClick={() => sessionUri && onSwitchView(sessionUri, "kanban")} aria-label="Show kanban">
                 <Network aria-hidden="true" className="h-[15px] w-[15px]" />
                 看板
               </button>
@@ -410,16 +410,16 @@ export function Conversation({
               onServerEvent={onServerEvent}
             />
           </div>
-        ) : activeView === "mindmap" ? (
-          // session 内 mindmap 子视图 = :subcomponent（Conversation 自挂，不进 layout registry）。
-          <div data-world-subcomponent="mindmap_board" className="flex-1 overflow-y-auto bg-card">
-            <Mindmap
+        ) : activeView === "kanban" ? (
+          // session 内 kanban 子视图 = :subcomponent（Conversation 自挂，不进 layout registry）。
+          <div data-world-subcomponent="kanban_board" className="flex-1 overflow-y-auto bg-card">
+            <Kanban
               state={state}
-              onAction={onMindmapAction}
+              onAction={onKanbanAction}
               onShare={() => {
                 if (!sessionUri) return
-                const nm = (state.mindmap_uri || "").split("/").pop()
-                onSend(sessionUri, `${MINDMAP_CARD_TAG} 看板${nm ? ` · ${nm}` : ""}`, [])
+                const nm = (state.kanban_uri || "").split("/").pop()
+                onSend(sessionUri, `${KANBAN_CARD_TAG} 看板${nm ? ` · ${nm}` : ""}`, [])
               }}
               onShareArtifact={(name, url) => sessionUri && onSend(sessionUri, `${ARTIFACT_CARD_TAG} ${name} ::: ${url}`, [])}
               onUploadFile={async (file) => {
@@ -477,16 +477,16 @@ export function Conversation({
                         )}
                       </div>
                       {message.text &&
-                        (message.text.startsWith(MINDMAP_CARD_TAG) ? (
-                          // mindmap 卡片：点击跳回 Mindmap 子视图编辑（chat↔mindmap 来回）。
+                        (message.text.startsWith(KANBAN_CARD_TAG) ? (
+                          // kanban 卡片：点击跳回 Kanban 子视图编辑（chat↔kanban 来回）。
                           <button
                             type="button"
-                            onClick={() => sessionUri && onSwitchView(sessionUri, "mindmap")}
+                            onClick={() => sessionUri && onSwitchView(sessionUri, "kanban")}
                             className="mt-1 flex w-full items-center gap-2 rounded-md border border-border bg-background px-3 py-2 text-left hover:border-primary"
                           >
                             <Network aria-hidden="true" className="h-4 w-4 text-primary" />
                             <span className="flex-1 text-sm font-medium text-foreground">
-                              {message.text.slice(MINDMAP_CARD_TAG.length).trim() || "看板"}
+                              {message.text.slice(KANBAN_CARD_TAG.length).trim() || "看板"}
                             </span>
                             <span className="whitespace-nowrap text-xs text-muted-foreground">点击编辑 →</span>
                           </button>

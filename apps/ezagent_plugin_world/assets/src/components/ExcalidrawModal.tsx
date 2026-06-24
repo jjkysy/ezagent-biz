@@ -13,7 +13,7 @@ type ExcalidrawAPI = {getSceneElements: () => unknown[]} | null
 
 /**
  * 内嵌 excalidraw 编辑器（弹窗）。
- * - 真相源 = mindmap 节点附件：画完保存 = 把 scene 的 elements 序列化成 JSON 存进 artifact.content。
+ * - 真相源 = kanban 节点附件：画完保存 = 把 scene 的 elements 序列化成 JSON 存进 artifact.content。
  * - 只存 elements（不存完整 appState）以稳进 8KB inline 上限。
  * - readOnly 时 viewModeEnabled，纯查看不可编辑。
  */

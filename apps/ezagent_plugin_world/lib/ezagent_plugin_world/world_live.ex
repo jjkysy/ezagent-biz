@@ -231,10 +231,10 @@ defmodule EzagentPluginWorld.WorldLive do
     ConversationActions.handle_dispatch(socket, action, args)
   end
 
-  @mindmap_actions ~w(mindmap.add_node mindmap.rename_node mindmap.move_node mindmap.remove_node mindmap.set_stage mindmap.claim_node mindmap.unclaim_node mindmap.set_status mindmap.attach_artifact mindmap.detach_artifact mindmap.set_metric mindmap.create mindmap.sync_miro mindmap.save_miro_creds mindmap.select_board mindmap.drop_subtree mindmap.sync_github mindmap.save_github_creds mindmap.attach_upload mindmap.register_pr mindmap.sync_prs mindmap.push_pr mindmap.attach_pr_file)
+  @kanban_actions ~w(kanban.add_node kanban.rename_node kanban.move_node kanban.remove_node kanban.set_stage kanban.claim_node kanban.unclaim_node kanban.set_status kanban.attach_artifact kanban.detach_artifact kanban.set_metric kanban.create kanban.sync_miro kanban.save_miro_creds kanban.select_board kanban.drop_subtree kanban.sync_github kanban.save_github_creds kanban.attach_upload kanban.register_pr kanban.sync_prs kanban.push_pr kanban.attach_pr_file)
   def handle_event("world:dispatch", %{"action" => action, "args" => args}, socket)
-      when action in @mindmap_actions and is_map(args) do
-    Ezagent.World.MindmapActions.handle_dispatch(socket, action, args)
+      when action in @kanban_actions and is_map(args) do
+    Ezagent.World.KanbanActions.handle_dispatch(socket, action, args)
   end
 
   def handle_event("pty_input", %{"bytes" => bytes}, socket) when is_binary(bytes) do
@@ -522,9 +522,9 @@ defmodule EzagentPluginWorld.WorldLive do
     |> put_command_palette(socket)
   end
 
-  defp state_for_route(%{component: "mindmap"} = route, socket, layout) do
+  defp state_for_route(%{component: "kanban"} = route, socket, layout) do
     route
-    |> Ezagent.World.MindmapData.state_for(%{
+    |> Ezagent.World.KanbanData.state_for(%{
       workspace_uri: socket.assigns.current_workspace_uri,
       caller_uri: socket.assigns.current_entity_uri,
       caller_caps: Map.get(socket.assigns, :current_caps, MapSet.new())
@@ -726,22 +726,22 @@ defmodule EzagentPluginWorld.WorldLive do
           path: path
         }
 
-      # mindmap 操作面（df-tech 新增 surface）：列表页 + 单个 mindmap 详情页。
-      match = Regex.run(~r{\A/plugins/mindmap/([^/]+)\z}, path) ->
+      # kanban 操作面（df-tech 新增 surface）：列表页 + 单个 kanban 详情页。
+      match = Regex.run(~r{\A/plugins/kanban/([^/]+)\z}, path) ->
         [_full, encoded] = match
 
         %{
           group: :workspace_plugins,
-          component: "mindmap",
+          component: "kanban",
           title: "思维导图",
           path: path,
           entity_uri: parse_any_uri(encoded)
         }
 
-      path == "/plugins/mindmap" ->
+      path == "/plugins/kanban" ->
         %{
           group: :workspace_plugins,
-          component: "mindmap",
+          component: "kanban",
           title: "思维导图",
           path: path,
           entity_uri: nil
