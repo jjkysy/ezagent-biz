@@ -1,5 +1,7 @@
 import {lazy, Suspense, useState} from "react"
 
+import "@excalidraw/excalidraw/index.css"
+
 import {Button} from "./ui/primitives"
 
 // 懒加载：excalidraw 包很大(~2MB)，只在点开编辑器时才下载，不进主 bundle。

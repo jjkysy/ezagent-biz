@@ -75,14 +75,21 @@ defmodule EzagentPluginMindmap.Github do
     end
   end
 
-  @doc "读一个 PR 的状态（state/merged）。返回 `{:ok, %{state, merged}}`。"
+  @doc "读一个 PR 的状态（state/merged/head 分支）。返回 `{:ok, %{state, merged, head_ref}}`。"
   @spec get_pull(String.t(), String.t(), integer()) ::
-          {:ok, %{state: String.t(), merged: boolean()}} | {:error, term()}
+          {:ok, %{state: String.t(), merged: boolean(), head_ref: String.t() | nil}}
+          | {:error, term()}
   def get_pull(token, repo, number) do
     case get(token, "/repos/#{repo}/pulls/#{number}") do
-      {:ok, %{"state" => s} = m} -> {:ok, %{state: s, merged: Map.get(m, "merged", false)}}
-      {:ok, other} -> {:error, {:unexpected_response, other}}
-      {:error, _} = err -> err
+      {:ok, %{"state" => s} = m} ->
+        {:ok,
+         %{state: s, merged: Map.get(m, "merged", false), head_ref: get_in(m, ["head", "ref"])}}
+
+      {:ok, other} ->
+        {:error, {:unexpected_response, other}}
+
+      {:error, _} = err ->
+        err
     end
   end
 

@@ -113,6 +113,14 @@ defmodule Ezagent.World.MindmapActions do
   def handle_dispatch(socket, "mindmap.push_pr", %{"mindmap_uri" => u, "id" => id}),
     do: push_pr(socket, u, id)
 
+  def handle_dispatch(socket, "mindmap.attach_pr_file", %{
+        "mindmap_uri" => u,
+        "id" => id,
+        "path" => path
+      })
+      when is_binary(path),
+      do: attach_pr_file(socket, u, id, path)
+
   def handle_dispatch(socket, _action, _args),
     do: {:noreply, assign(socket, :last_dispatch_status, "error:unsupported_action")}
 
@@ -328,6 +336,46 @@ defmodule Ezagent.World.MindmapActions do
              pr when is_integer(pr) <- node_pr(node),
              digest = EzagentPluginMindmap.Ci.requirement_digest(tree, node_id),
              {:ok, _url} <- EzagentPluginMindmap.Github.post_comment(token, repo, pr, digest) do
+          {:noreply, push_tree(socket, uri, "ok")}
+        else
+          nil -> gerr(socket, "no_pr_registered")
+          {:ok, %{repo: nil}} -> gerr(socket, "github_repo_missing")
+          {:error, :github_token_missing} -> gerr(socket, "github_token_missing")
+          {:error, reason} -> gerr(socket, gh_error(reason))
+          _ -> gerr(socket, "no_pr_registered")
+        end
+
+      :error ->
+        gerr(socket, "bad_mindmap_uri")
+    end
+  end
+
+  # 挂 PR 文件 = 读节点已登记的 PR → 取 PR head 分支 → 构造该文件的 github blob 链接(可点跳转)。
+  defp attach_pr_file(socket, uri_str, node_id, path) do
+    case parse(uri_str) do
+      %URI{} = uri ->
+        with {:ok, %{token: token, repo: repo}} when is_binary(repo) <-
+               EzagentPluginMindmap.Github.read_creds(),
+             {:ok, %{tree: %{nodes: nodes}}} <- get_internal_tree(socket, uri),
+             node when is_map(node) <- Map.get(nodes, node_id),
+             pr when is_integer(pr) <- node_pr(node),
+             {:ok, %{head_ref: ref}} when is_binary(ref) <-
+               EzagentPluginMindmap.Github.get_pull(token, repo, pr) do
+          clean = String.trim_leading(path, "/")
+          url = "https://github.com/#{repo}/blob/#{ref}/#{clean}"
+          name = clean |> String.split("/") |> List.last()
+
+          _ =
+            Invocation.dispatch(%Invocation{
+              target: Ezagent.URI.with_action(uri, :mindmap, :attach_artifact),
+              mode: :call,
+              args: %{
+                id: node_id,
+                artifact: %{tool: "github", kind: "github_file", ref: name, url: url}
+              },
+              ctx: ctx(socket)
+            })
+
           {:noreply, push_tree(socket, uri, "ok")}
         else
           nil -> gerr(socket, "no_pr_registered")

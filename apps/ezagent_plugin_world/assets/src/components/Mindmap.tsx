@@ -1,9 +1,11 @@
-import {useEffect, useState} from "react"
+import {Suspense, lazy, useEffect, useState} from "react"
 import {ExternalLink, GitPullRequest, Hand, Paperclip, Pencil, Plus, RefreshCw, Scissors, Send, Trash2} from "lucide-react"
 
 import {Button} from "./ui/primitives"
-import {ExcalidrawModal} from "./ExcalidrawModal"
 import {MindmapCanvas, STAGE_LABEL, STAGES, gateVerdict} from "./MindmapCanvas"
+
+// 懒加载：excalidraw 组件 + 它的 CSS 都进独立 chunk，不撑主包。
+const ExcalidrawModal = lazy(() => import("./ExcalidrawModal").then((m) => ({default: m.ExcalidrawModal})))
 
 const STATUS_ICON: Record<string, string> = {unassigned: "○", claimed: "◔", doing: "◑", done: "●"}
 
@@ -417,14 +419,42 @@ function NodePanel({node, args, stages, statuses, onAction, onShareArtifact, onU
         )}
       </div>
       {excal && (
-        <ExcalidrawModal
-          initial={excal.initial}
-          readOnly={excal.readOnly}
-          onSave={(json) => onAction("mindmap.attach_artifact", {...args, artifact: {tool: "excalidraw", kind: "excalidraw", ref: "线框图", content: json}})}
-          onClose={() => setExcal(null)}
-        />
+        <Suspense fallback={null}>
+          <ExcalidrawModal
+            initial={excal.initial}
+            readOnly={excal.readOnly}
+            onSave={(json) => onAction("mindmap.attach_artifact", {...args, artifact: {tool: "excalidraw", kind: "excalidraw", ref: "线框图", content: json}})}
+            onClose={() => setExcal(null)}
+          />
+        </Suspense>
       )}
       <div className="flex flex-wrap gap-2 border-t border-border pt-2 text-xs">
+        {/* 登记 PR：**每阶段**都能登记（为了挂 PR 内的文件路径） */}
+        <button
+          type="button"
+          className="inline-flex items-center gap-1 text-primary hover:underline"
+          title="登记一个已开的 PR 到本节点（之后可挂 PR 内文件）"
+          onClick={() => {
+            const pr = window.prompt("已开 PR 的编号（如 42）")
+            if (pr && pr.trim()) onAction("mindmap.register_pr", {...args, pr: pr.trim()})
+          }}
+        >
+          <GitPullRequest className="h-3 w-3" /> 登记 PR
+        </button>
+        {/* 有 PR 后：挂 PR 内文件路径（构造可点的 github 链接跳转查看） */}
+        {hasPr && (
+          <button
+            type="button"
+            className="inline-flex items-center gap-1 text-primary hover:underline"
+            title="挂一个 PR 内的文件路径（点击跳转到 github 查看）"
+            onClick={() => {
+              const path = window.prompt("PR 内文件路径（如 docs/discuss/1-homesite/P-用户画像-personas.md）")
+              if (path && path.trim()) onAction("mindmap.attach_pr_file", {...args, path: path.trim()})
+            }}
+          >
+            <Paperclip className="h-3 w-3" /> 挂 PR 文件
+          </button>
+        )}
         {/* issue 棒：登记 issue（建 GitHub issue，非必须） */}
         {node.stage === "issue" && (
           <button
@@ -436,30 +466,17 @@ function NodePanel({node, args, stages, statuses, onAction, onShareArtifact, onU
             <GitPullRequest className="h-3 w-3" /> 登记 issue
           </button>
         )}
-        {/* pr 棒：登记 PR（记下 PR 链接）→ 出站 GitHub（把需求摘要推到该 PR；没登记不能出站） */}
+        {/* pr 棒：出站 GitHub（把需求摘要推到登记的 PR；没登记不能出站，这是验证） */}
         {node.stage === "pr" && (
-          <>
-            <button
-              type="button"
-              className="inline-flex items-center gap-1 text-primary hover:underline"
-              title="登记一个已开的 PR 到本节点"
-              onClick={() => {
-                const pr = window.prompt("已开 PR 的编号（如 42）")
-                if (pr && pr.trim()) onAction("mindmap.register_pr", {...args, pr: pr.trim()})
-              }}
-            >
-              <GitPullRequest className="h-3 w-3" /> 登记 PR
-            </button>
-            <button
-              type="button"
-              disabled={!hasPr}
-              className={`inline-flex items-center gap-1 ${hasPr ? "text-primary hover:underline" : "cursor-not-allowed text-muted-foreground/50"}`}
-              title={hasPr ? "把产品需求摘要出站留言到登记的 PR" : "先登记 PR 才能出站"}
-              onClick={() => hasPr && onAction("mindmap.push_pr", args)}
-            >
-              <GitPullRequest className="h-3 w-3" /> 出站 GitHub
-            </button>
-          </>
+          <button
+            type="button"
+            disabled={!hasPr}
+            className={`inline-flex items-center gap-1 ${hasPr ? "text-primary hover:underline" : "cursor-not-allowed text-muted-foreground/50"}`}
+            title={hasPr ? "把产品需求摘要出站留言到登记的 PR" : "先登记 PR 才能出站"}
+            onClick={() => hasPr && onAction("mindmap.push_pr", args)}
+          >
+            <GitPullRequest className="h-3 w-3" /> 出站 GitHub
+          </button>
         )}
         <button
           type="button"
