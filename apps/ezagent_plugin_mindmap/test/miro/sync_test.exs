@@ -88,12 +88,18 @@ defmodule EzagentPluginMindmap.Miro.SyncTest do
         owner: "entity://system/user/alice",
         status: :doing,
         metrics: [%{name: "周闭环", target: 2, current: 1, unit: "个"}],
-        artifacts: [%{ref: "#1"}]
+        artifacts: [
+          %{ref: "spec卡", content: "Given X When Y Then Z"},
+          %{ref: "#1", url: "https://github.com/o/r/pull/1"}
+        ]
       }
 
       c = Sync.render_content(node)
       assert c =~ "◑" and c =~ "[dev]" and c =~ "功能A"
-      assert c =~ "<b>@alice</b>" and c =~ "📊周闭环:1/2" and c =~ "📎1"
+      assert c =~ "<b>@alice</b>" and c =~ "📊周闭环:1/2"
+      # 文档真信息进 label（不只个数）：URL + 内容片段都在
+      assert c =~ "#1(https://github.com/o/r/pull/1)"
+      assert c =~ "spec卡: Given X When Y Then Z"
       refute c =~ "<p>"
     end
 
