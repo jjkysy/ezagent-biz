@@ -183,8 +183,9 @@ function MindmapDetail({state, onAction, onShare, onShareArtifact, onUploadFile}
         </div>
       )}
 
-      <div className="flex flex-1 gap-3 overflow-hidden">
-        {/* 侧边栏：导图列表 + 新建 + 选中节点属性 */}
+      {/* min-h-0：让 flex-1 真正按可用高度约束（否则左栏一长会撑高、把右侧画布滚出视野） */}
+      <div className="flex min-h-0 flex-1 gap-3 overflow-hidden">
+        {/* 侧边栏：导图列表 + 新建 + 选中节点属性（内部独立滚动，不带动画布） */}
         <aside className="flex w-64 flex-shrink-0 flex-col gap-3 overflow-y-auto">
           <div className="rounded-md border border-border p-2">
             <div className="mb-1.5 text-xs font-semibold text-muted-foreground">导图</div>
@@ -284,6 +285,12 @@ function NodePanel({node, args, stages, statuses, onAction, onShareArtifact, onU
         </div>
       )}
       <div className="flex flex-wrap items-center gap-1">
+        <Button type="button" size="sm" variant="secondary" title="给本节点加一个子节点（接力链下一棒）" onClick={() => {
+          const t = window.prompt("子节点标题（接力链下一棒，如 北极星指标）")
+          if (t && t.trim()) onAction("mindmap.add_node", {mindmap_uri: args.mindmap_uri, parent_id: args.id, title: t.trim()})
+        }}>
+          <Plus className="h-3.5 w-3.5" /> 加子
+        </Button>
         <Button type="button" size="sm" variant="secondary" onClick={() => onAction("mindmap.claim_node", args)}>
           <Hand className="h-3.5 w-3.5" /> 认领
         </Button>

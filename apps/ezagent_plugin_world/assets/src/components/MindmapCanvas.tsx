@@ -7,6 +7,7 @@ import {
   ReactFlow,
   ReactFlowProvider,
   useEdgesState,
+  useNodesInitialized,
   useNodesState,
   useReactFlow,
   type Edge,
@@ -162,14 +163,20 @@ function Flow({uri, tree, selectedId, onSelectNode, onAction}: CanvasProps) {
   const laid = useMemo(() => layoutTree(tree, selectedId, onSelectNode, onAddChild), [tree, selectedId, onSelectNode, onAddChild])
   const [nodes, setNodes, onNodesChange] = useNodesState(laid.nodes)
   const [edges, setEdges, onEdgesChange] = useEdgesState(laid.edges)
+  const nodesInitialized = useNodesInitialized()
 
-  // 树/选中变化 → 重新布局 + 重新 fitView（加了节点要自动入视野，否则点不到/看不见）。
+  // 树/选中变化 → 重新布局（推给 react-flow）。
   useEffect(() => {
     setNodes(laid.nodes)
     setEdges(laid.edges)
-    const t = setTimeout(() => fitView({padding: 0.2, maxZoom: 1}), 60)
-    return () => clearTimeout(t)
-  }, [laid, setNodes, setEdges, fitView])
+  }, [laid, setNodes, setEdges])
+
+  // fitView 必须等节点被 react-flow **测量好尺寸**(`nodesInitialized`)再跑——否则在节点尺寸
+  // 还是 0 时 fit 会把视口算错、节点全跑出可视区(画布空白但节点其实在 DOM 里)。这是之前
+  // "建了树画布却空白"的根因。laid 变(加/删节点)→nodesInitialized 先 false 再 true→届时 fit。
+  useEffect(() => {
+    if (nodesInitialized) fitView({padding: 0.2, maxZoom: 1, duration: 0})
+  }, [nodesInitialized, laid, fitView])
 
   // react-flow 必须有显式尺寸——flex/百分比在 mount 时为 0 会让 fitView 失效、节点不可见。
   return (
@@ -183,6 +190,7 @@ function Flow({uri, tree, selectedId, onSelectNode, onAction}: CanvasProps) {
         nodeTypes={nodeTypes}
         fitView
         fitViewOptions={{padding: 0.2, maxZoom: 1}}
+        deleteKeyCode={null}
         minZoom={0.2}
         proOptions={{hideAttribution: true}}
       >
