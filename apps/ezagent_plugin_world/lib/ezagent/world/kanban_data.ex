@@ -91,8 +91,16 @@ defmodule Ezagent.World.KanbanData do
       "kanban_uri" => encode_uri(uri),
       "tree" => read_tree(uri, ctx),
       "instances" => list_instances(),
+      "config" => board_config(uri),
       "last_dispatch_status" => "ok"
     }
+  end
+
+  @doc "本图的连接器配置（github_repo + miro 板名；token 在全局，不在这）。"
+  @spec board_config(URI.t()) :: map()
+  def board_config(%URI{} = uri) do
+    c = EzagentPluginKanban.BoardConfig.read(uri)
+    %{"github_repo" => c.github_repo, "miro_board" => c.miro_board}
   end
 
   @doc "确保某 kanban Kind 起活（侧边栏选已有导图时用）。"
