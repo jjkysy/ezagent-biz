@@ -89,6 +89,13 @@ defmodule Ezagent.World.MindmapActions do
       when is_binary(token),
       do: save_miro_creds(socket, token, Map.get(a, "board_id", ""))
 
+  def handle_dispatch(socket, "mindmap.sync_github", %{"mindmap_uri" => u, "id" => id}),
+    do: sync_github(socket, u, id)
+
+  def handle_dispatch(socket, "mindmap.save_github_creds", %{"access_token" => token} = a)
+      when is_binary(token),
+      do: save_github_creds(socket, token, Map.get(a, "repo", ""))
+
   def handle_dispatch(socket, _action, _args),
     do: {:noreply, assign(socket, :last_dispatch_status, "error:unsupported_action")}
 
@@ -153,6 +160,91 @@ defmodule Ezagent.World.MindmapActions do
              |> assign(:last_dispatch_status, "ok")
              |> push_event("world:state", %{
                "miro" => Ezagent.World.MindmapData.miro_status(),
+               "last_dispatch_status" => "ok"
+             })}
+
+          {:error, reason} ->
+            {:noreply, assign(socket, :last_dispatch_status, "error:#{reason(reason)}")}
+        end
+    end
+  end
+
+  # --- 出站到 GitHub（片6，纯出站）：把节点出站成 issue + 回挂 issue 到节点 -----
+
+  defp sync_github(socket, uri_str, node_id) do
+    case parse(uri_str) do
+      %URI{} = uri ->
+        tree = MindmapData.read_tree(uri, read_ctx(socket))
+        node = get_in(tree, ["nodes", node_id])
+
+        case {EzagentPluginMindmap.Github.read_creds(), node} do
+          {{:ok, %{token: token, repo: repo}}, %{} = n} when is_binary(repo) ->
+            case EzagentPluginMindmap.Github.create_issue(
+                   token,
+                   repo,
+                   n["title"] || "(untitled)",
+                   github_body(n)
+                 ) do
+              {:ok, %{number: num, url: url}} ->
+                # issue 回挂到节点（走已注册的 attach_artifact 动作）
+                _ =
+                  Invocation.dispatch(%Invocation{
+                    target: Ezagent.URI.with_action(uri, :mindmap, :attach_artifact),
+                    mode: :call,
+                    args: %{
+                      id: node_id,
+                      artifact: %{tool: "github", kind: "issue", ref: "##{num}", url: url}
+                    },
+                    ctx: ctx(socket)
+                  })
+
+                {:noreply, push_tree(socket, uri, "ok")}
+
+              {:error, reason} ->
+                {:noreply, assign(socket, :last_dispatch_status, "error:#{reason(reason)}")}
+            end
+
+          {{:ok, %{repo: nil}}, _} ->
+            {:noreply, assign(socket, :last_dispatch_status, "error:github_repo_missing")}
+
+          {{:error, _}, _} ->
+            {:noreply, assign(socket, :last_dispatch_status, "error:github_token_missing")}
+
+          {_, nil} ->
+            {:noreply, assign(socket, :last_dispatch_status, "error:node_not_found")}
+        end
+
+      :error ->
+        {:noreply, assign(socket, :last_dispatch_status, "error:bad_mindmap_uri")}
+    end
+  end
+
+  defp github_body(n) do
+    content =
+      (n["artifacts"] || [])
+      |> Enum.map(& &1["content"])
+      |> Enum.reject(&is_nil/1)
+      |> Enum.join("\n\n")
+
+    "**stage**: #{n["stage"]} · **status**: #{n["status"]}\n\n" <>
+      content <> "\n\n_由 ezagent mindmap 节点出站_"
+  end
+
+  # --- 保存 GitHub 凭证（配置页，admin-gated；同 Miro 不写死）-------------
+
+  defp save_github_creds(socket, token, repo) do
+    cond do
+      not Ezagent.Identity.admin?(socket.assigns.current_entity_uri) ->
+        {:noreply, assign(socket, :last_dispatch_status, "error:unauthorized")}
+
+      true ->
+        case EzagentPluginMindmap.Github.write_creds(%{access_token: token, repo: repo}) do
+          :ok ->
+            {:noreply,
+             socket
+             |> assign(:last_dispatch_status, "ok")
+             |> push_event("world:state", %{
+               "github" => Ezagent.World.MindmapData.github_status(),
                "last_dispatch_status" => "ok"
              })}
 

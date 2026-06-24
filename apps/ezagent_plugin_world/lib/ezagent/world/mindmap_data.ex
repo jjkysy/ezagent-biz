@@ -27,6 +27,7 @@ defmodule Ezagent.World.MindmapData do
       "stages" => @stages,
       "statuses" => @statuses,
       "miro" => miro_status(),
+      "github" => github_status(),
       "last_dispatch_status" => nil
     }
   end
@@ -37,6 +38,20 @@ defmodule Ezagent.World.MindmapData do
     case EzagentPluginMindmap.Miro.read_creds() do
       {:ok, %{token: t, board_id: b}} when is_binary(t) and t != "" ->
         %{"configured" => true, "board_id" => b}
+
+      _ ->
+        %{"configured" => false}
+    end
+  rescue
+    _ -> %{"configured" => false}
+  end
+
+  @doc "GitHub 凭证连接状态（只读；凭证填 `system://credentials/github.yaml`，同 Miro）。"
+  @spec github_status() :: map()
+  def github_status do
+    case EzagentPluginMindmap.Github.read_creds() do
+      {:ok, %{token: t, repo: r}} when is_binary(t) and t != "" ->
+        %{"configured" => true, "repo" => r}
 
       _ ->
         %{"configured" => false}

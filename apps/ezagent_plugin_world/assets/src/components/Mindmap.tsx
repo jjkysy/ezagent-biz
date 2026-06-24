@@ -1,5 +1,5 @@
 import {useEffect, useState} from "react"
-import {ExternalLink, Hand, Paperclip, Pencil, Plus, RefreshCw, Scissors, Send, Target, Trash2} from "lucide-react"
+import {ExternalLink, GitPullRequest, Hand, Paperclip, Pencil, Plus, RefreshCw, Scissors, Send, Target, Trash2} from "lucide-react"
 
 import {Button} from "./ui/primitives"
 import {MindmapCanvas, STAGE_LABEL, STAGES, gateVerdict} from "./MindmapCanvas"
@@ -29,6 +29,7 @@ export type MindmapState = {
   statuses?: string[]
   miro_board_url?: string | null
   miro?: {configured?: boolean; board_id?: string | null}
+  github?: {configured?: boolean; repo?: string | null}
   last_dispatch_status?: string | null
 }
 
@@ -58,12 +59,15 @@ export function Mindmap({
 // 插件配置页 = 只配 Miro 凭证（不在这编辑导图——编辑在会话内 Mindmap 子视图）。
 function MindmapList({state, onAction}: {state: MindmapState; onAction: Act}) {
   const [token, setToken] = useState("")
+  const [ghToken, setGhToken] = useState("")
+  const [ghRepo, setGhRepo] = useState(state.github?.repo || "")
   const configured = state.miro?.configured
+  const ghConfigured = state.github?.configured
   return (
     <div className="flex max-w-2xl flex-col gap-4 p-6">
       <div>
         <h2 className="text-lg font-semibold text-foreground">思维导图 · 配置</h2>
-        <p className="text-sm text-muted-foreground">配置 Miro 镜像凭证。<strong>建树/认领/编辑在会话(session)里的 Mindmap 子视图</strong>，本页只配置。</p>
+        <p className="text-sm text-muted-foreground">配置出站连接器凭证（Miro / GitHub）。<strong>建树/认领/编辑在会话(session)里的 Mindmap 子视图</strong>，本页只配置。</p>
       </div>
       <div className="flex flex-col gap-3 rounded-md border border-border bg-card p-4">
         <div className="flex items-center gap-2">
@@ -83,8 +87,32 @@ function MindmapList({state, onAction}: {state: MindmapState; onAction: Act}) {
             保存凭证
           </Button>
         </div>
-        <p className="text-xs text-muted-foreground">凭证存到 system://credentials/miro.yaml（节点级，0600，仅 admin 可改）。board 在同步时自动建/绑定，不用配。不配凭证也能用，只是会话内不同步。</p>
       </div>
+
+      <div className="flex flex-col gap-3 rounded-md border border-border bg-card p-4">
+        <div className="flex items-center gap-2">
+          <span className="font-medium text-foreground">GitHub 凭证</span>
+          {ghConfigured ? (
+            <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-green-600 dark:text-green-400">已配置 ✓ {state.github?.repo}</span>
+          ) : (
+            <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">未配置</span>
+          )}
+        </div>
+        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+          Access Token (PAT)
+          <input type="password" className={`${inputCls} w-full`} placeholder="粘贴 GitHub PAT" value={ghToken} onChange={(e) => setGhToken(e.target.value)} />
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+          Repo（owner/name）
+          <input className={`${inputCls} w-full`} placeholder="如 jjkysy/test-ezagent" value={ghRepo} onChange={(e) => setGhRepo(e.target.value)} />
+        </label>
+        <div>
+          <Button type="button" size="sm" onClick={() => ghToken.trim() && onAction("mindmap.save_github_creds", {access_token: ghToken.trim(), repo: ghRepo.trim()})}>
+            保存凭证
+          </Button>
+        </div>
+      </div>
+      <p className="text-xs text-muted-foreground">凭证存到 system://credentials/*.yaml（节点级，0600，仅 admin 可改，不写死）。节点上「出站到 GitHub」建 issue。</p>
       <Status state={state} />
     </div>
   )
@@ -334,6 +362,14 @@ function NodePanel({node, args, stages, statuses, onAction, onShareArtifact}: {
         )}
       </div>
       <div className="flex flex-wrap gap-2 border-t border-border pt-2 text-xs">
+        <button
+          type="button"
+          className="inline-flex items-center gap-1 text-primary hover:underline"
+          title="把本节点出站成 GitHub issue（凭证在配置页）"
+          onClick={() => onAction("mindmap.sync_github", args)}
+        >
+          <GitPullRequest className="h-3 w-3" /> 出站 GitHub
+        </button>
         <button
           type="button"
           className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"
