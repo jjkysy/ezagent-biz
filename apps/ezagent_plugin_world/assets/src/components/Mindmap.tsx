@@ -1,5 +1,5 @@
 import {useEffect, useState} from "react"
-import {ExternalLink, GitPullRequest, Hand, Paperclip, Pencil, Plus, RefreshCw, Scissors, Send, Target, Trash2} from "lucide-react"
+import {ExternalLink, GitPullRequest, Hand, Paperclip, Pencil, Plus, RefreshCw, Scissors, Send, Trash2} from "lucide-react"
 
 import {Button} from "./ui/primitives"
 import {ExcalidrawModal} from "./ExcalidrawModal"
@@ -189,10 +189,10 @@ function MindmapDetail({state, onAction, onShare, onShareArtifact, onUploadFile}
           左栏在这固定高内 overflow-y-auto 自己滚。 */}
       <div className="flex h-[560px] gap-3 overflow-hidden">
         {/* 侧边栏：导图列表 + 新建 + 选中节点属性（在固定高内独立滚动，不带动画布） */}
-        <aside className="flex w-64 flex-shrink-0 flex-col gap-3 overflow-y-auto">
-          <div className="rounded-md border border-border p-2">
+        <aside className="flex w-64 flex-shrink-0 flex-col gap-3 overflow-hidden">
+          <div className="flex-shrink-0 rounded-md border border-border p-2">
             <div className="mb-1.5 text-xs font-semibold text-muted-foreground">导图</div>
-            <ul className="flex flex-col gap-0.5">
+            <ul className="flex max-h-32 flex-col gap-0.5 overflow-y-auto">
               {instances.map((i) => (
                 <li key={i.uri}>
                   <button
@@ -213,7 +213,7 @@ function MindmapDetail({state, onAction, onShare, onShareArtifact, onUploadFile}
             </div>
           </div>
 
-          <div className="rounded-md border border-border p-2">
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto rounded-md border border-border p-2">
             <div className="mb-1.5 text-xs font-semibold text-muted-foreground">节点属性</div>
             {sel ? (
               <NodePanel node={sel} args={nodeArgs} stages={allowedStages} statuses={statuses} onAction={onAction} onShareArtifact={onShareArtifact} onUploadFile={onUploadFile} />
@@ -253,6 +253,7 @@ function NodePanel({node, args, stages, statuses, onAction, onShareArtifact, onU
   onUploadFile?: UploadFn
 }) {
   const owner = node.owner ? node.owner.split("/").pop() : null
+  const hasPr = (node.artifacts ?? []).some((a) => (a as {kind?: string}).kind === "pr")
   const selectCls = "rounded border border-border bg-background px-1 py-0.5 text-xs text-muted-foreground"
   // issue2: inline content 用 textarea 编辑器(替 window.prompt 单行 hack)
   const [editing, setEditing] = useState(false)
@@ -315,6 +316,15 @@ function NodePanel({node, args, stages, statuses, onAction, onShareArtifact, onU
           {(node.artifacts ?? []).map((raw, i) => {
             const a = raw as {kind?: string; ref?: string; url?: string; content?: string}
             const name = a.ref || a.kind || "artifact"
+            // drop 记录：单独显眼显示(✂ + 原因全文)，这是被砍子树反哺过来的历史
+            if (a.kind === "drop_record") {
+              return (
+                <li key={i} className="flex items-start gap-1.5 rounded bg-amber-50 px-1.5 py-1 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400">
+                  <Scissors className="mt-0.5 h-3 w-3 flex-shrink-0" />
+                  <span className="flex-1 break-words">{a.content || name}</span>
+                </li>
+              )
+            }
             return (
               <li key={i} className="flex items-center gap-1.5">
                 <Paperclip className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
@@ -415,37 +425,42 @@ function NodePanel({node, args, stages, statuses, onAction, onShareArtifact, onU
         />
       )}
       <div className="flex flex-wrap gap-2 border-t border-border pt-2 text-xs">
-        <button
-          type="button"
-          className="inline-flex items-center gap-1 text-primary hover:underline"
-          title="把本节点出站成 GitHub issue（凭证在配置页）"
-          onClick={() => onAction("mindmap.sync_github", args)}
-        >
-          <GitPullRequest className="h-3 w-3" /> 出站 GitHub
-        </button>
-        <button
-          type="button"
-          className="inline-flex items-center gap-1 text-primary hover:underline"
-          title="登记一个已开的 PR（仓库在配置页定位）→ 出站「产品需求摘要」留言到该 PR"
-          onClick={() => {
-            const pr = window.prompt("已开 PR 的编号（如 42；仓库用配置页填的那个）")
-            if (pr && pr.trim()) onAction("mindmap.register_pr", {...args, pr: pr.trim()})
-          }}
-        >
-          <GitPullRequest className="h-3 w-3" /> 登记 PR
-        </button>
-        <button
-          type="button"
-          className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"
-          onClick={() => {
-            const name = window.prompt("指标名（如 周闭环数）")
-            if (!name) return
-            const target = window.prompt("目标值")
-            onAction("mindmap.set_metric", {...args, metric: {name, target, current: null}})
-          }}
-        >
-          <Target className="h-3 w-3" /> 设指标
-        </button>
+        {/* issue 棒：登记 issue（建 GitHub issue，非必须） */}
+        {node.stage === "issue" && (
+          <button
+            type="button"
+            className="inline-flex items-center gap-1 text-primary hover:underline"
+            title="在配置的 GitHub 仓库建一个 issue（把本节点出站）"
+            onClick={() => onAction("mindmap.sync_github", args)}
+          >
+            <GitPullRequest className="h-3 w-3" /> 登记 issue
+          </button>
+        )}
+        {/* pr 棒：登记 PR（记下 PR 链接）→ 出站 GitHub（把需求摘要推到该 PR；没登记不能出站） */}
+        {node.stage === "pr" && (
+          <>
+            <button
+              type="button"
+              className="inline-flex items-center gap-1 text-primary hover:underline"
+              title="登记一个已开的 PR 到本节点"
+              onClick={() => {
+                const pr = window.prompt("已开 PR 的编号（如 42）")
+                if (pr && pr.trim()) onAction("mindmap.register_pr", {...args, pr: pr.trim()})
+              }}
+            >
+              <GitPullRequest className="h-3 w-3" /> 登记 PR
+            </button>
+            <button
+              type="button"
+              disabled={!hasPr}
+              className={`inline-flex items-center gap-1 ${hasPr ? "text-primary hover:underline" : "cursor-not-allowed text-muted-foreground/50"}`}
+              title={hasPr ? "把产品需求摘要出站留言到登记的 PR" : "先登记 PR 才能出站"}
+              onClick={() => hasPr && onAction("mindmap.push_pr", args)}
+            >
+              <GitPullRequest className="h-3 w-3" /> 出站 GitHub
+            </button>
+          </>
+        )}
         <button
           type="button"
           className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"
@@ -502,6 +517,7 @@ const DISPATCH_ERR: Record<string, string> = {
   github_not_found: "GitHub 404：仓库或 PR/issue 不存在（确认 owner/name 和编号）",
   github_unreachable: "连不上 GitHub：检查网络（用 REST API，不需要装 gh / 不走 ssh）",
   bad_pr_number: "PR 号无效：填数字，如 42",
+  no_pr_registered: "先登记 PR 才能出站",
 }
 function dispatchError(status?: string | null): string | null {
   if (!status || !status.startsWith("error:")) return null

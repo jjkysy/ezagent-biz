@@ -110,6 +110,9 @@ defmodule Ezagent.World.MindmapActions do
   def handle_dispatch(socket, "mindmap.sync_prs", %{"mindmap_uri" => u}),
     do: sync_prs(socket, u)
 
+  def handle_dispatch(socket, "mindmap.push_pr", %{"mindmap_uri" => u, "id" => id}),
+    do: push_pr(socket, u, id)
+
   def handle_dispatch(socket, _action, _args),
     do: {:noreply, assign(socket, :last_dispatch_status, "error:unsupported_action")}
 
@@ -284,36 +287,58 @@ defmodule Ezagent.World.MindmapActions do
     end
   end
 
+  # 登记 PR = 只把 PR 链接挂到节点（不发 github 评论）。出站留言在 push_pr。
   defp do_register_pr(socket, uri, node_id, pr) do
-    with {:ok, %{token: token, repo: repo}} when is_binary(repo) <-
-           EzagentPluginMindmap.Github.read_creds(),
-         {:ok, %{tree: %{nodes: nodes} = tree}} <- get_internal_tree(socket, uri),
-         true <- Map.has_key?(nodes, node_id) or {:error, :node_not_found},
-         digest = EzagentPluginMindmap.Ci.requirement_digest(tree, node_id),
-         {:ok, _url} <- EzagentPluginMindmap.Github.post_comment(token, repo, pr, digest) do
-      _ =
-        Invocation.dispatch(%Invocation{
-          target: Ezagent.URI.with_action(uri, :mindmap, :attach_artifact),
-          mode: :call,
-          args: %{
-            id: node_id,
-            artifact: %{
-              tool: "github",
-              kind: "pr",
-              ref: "##{pr}",
-              url: "https://github.com/#{repo}/pull/#{pr}"
-            }
-          },
-          ctx: ctx(socket)
-        })
+    case EzagentPluginMindmap.Github.read_creds() do
+      {:ok, %{repo: repo}} when is_binary(repo) ->
+        _ =
+          Invocation.dispatch(%Invocation{
+            target: Ezagent.URI.with_action(uri, :mindmap, :attach_artifact),
+            mode: :call,
+            args: %{
+              id: node_id,
+              artifact: %{
+                tool: "github",
+                kind: "pr",
+                ref: "##{pr}",
+                url: "https://github.com/#{repo}/pull/#{pr}"
+              }
+            },
+            ctx: ctx(socket)
+          })
 
-      {:noreply, push_tree(socket, uri, "ok")}
-    else
-      {:ok, %{repo: nil}} -> gerr(socket, "github_repo_missing")
-      {:error, :github_token_missing} -> gerr(socket, "github_token_missing")
-      {:error, :node_not_found} -> gerr(socket, "node_not_found")
-      {:error, reason} -> gerr(socket, gh_error(reason))
-      _ -> gerr(socket, "github_error")
+        {:noreply, push_tree(socket, uri, "ok")}
+
+      {:ok, %{repo: nil}} ->
+        gerr(socket, "github_repo_missing")
+
+      _ ->
+        gerr(socket, "github_token_missing")
+    end
+  end
+
+  # 出站 GitHub = 把产品需求摘要留言推到节点上**已登记的 PR**（没登记报错，这是验证）。
+  defp push_pr(socket, uri_str, node_id) do
+    case parse(uri_str) do
+      %URI{} = uri ->
+        with {:ok, %{token: token, repo: repo}} when is_binary(repo) <-
+               EzagentPluginMindmap.Github.read_creds(),
+             {:ok, %{tree: %{nodes: nodes} = tree}} <- get_internal_tree(socket, uri),
+             node when is_map(node) <- Map.get(nodes, node_id),
+             pr when is_integer(pr) <- node_pr(node),
+             digest = EzagentPluginMindmap.Ci.requirement_digest(tree, node_id),
+             {:ok, _url} <- EzagentPluginMindmap.Github.post_comment(token, repo, pr, digest) do
+          {:noreply, push_tree(socket, uri, "ok")}
+        else
+          nil -> gerr(socket, "no_pr_registered")
+          {:ok, %{repo: nil}} -> gerr(socket, "github_repo_missing")
+          {:error, :github_token_missing} -> gerr(socket, "github_token_missing")
+          {:error, reason} -> gerr(socket, gh_error(reason))
+          _ -> gerr(socket, "no_pr_registered")
+        end
+
+      :error ->
+        gerr(socket, "bad_mindmap_uri")
     end
   end
 

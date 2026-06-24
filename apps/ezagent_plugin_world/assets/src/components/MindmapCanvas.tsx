@@ -39,9 +39,9 @@ export const STAGE_LABEL: Record<string, string> = {
   positioning: "定位",
   metric: "北极星",
   pain: "痛点",
-  anchor: "认领映射",
-  ux: "线框",
-  feature: "功能卡",
+  anchor: "目标用户",
+  ux: "体验主张",
+  feature: "功能",
   issue: "issue",
   test: "测试",
   pr: "PR",
@@ -56,20 +56,16 @@ export type GateVerdict = {verdict: "pass" | "warn" | "none"; reason?: string}
 export function gateVerdict(node: {stage?: string | null; status?: string | null; artifacts?: {kind?: string; content?: string; ref?: string}[]}): GateVerdict {
   const arts = (node.artifacts || []) as {kind?: string; content?: string; ref?: string}[]
   const hasKind = (k: string) => arts.some((a) => a.kind === k)
-  const hasGherkin = arts.some((a) => /given|when|then|当|则|如果/i.test(a.content || ""))
+  const hasArtifact = arts.length > 0
+  // gate 软门 = 只验"这一棒有没有交付物"(内容无法机读，只能提示有没有产物)。
+  // 例外：pr 棒必须先"登记 PR"(挂 pr 产物)才能出站；issue 棒挂 issue 非必须(可选，不报警)。
   switch (node.stage) {
-    case "feature":
-      return hasGherkin ? {verdict: "pass"} : {verdict: "warn", reason: "缺 spec 卡 / Gherkin 验收"}
-    case "issue":
-      return hasKind("issue") ? {verdict: "pass"} : {verdict: "warn", reason: "缺 issue"}
-    case "test":
-      return arts.some((a) => a.kind === "test_suite" && a.ref === "green")
-        ? {verdict: "pass"}
-        : {verdict: "warn", reason: "测试未绿"}
     case "pr":
-      return hasKind("pr") ? {verdict: "pass"} : {verdict: "warn", reason: "缺 PR"}
+      return hasKind("pr") ? {verdict: "pass"} : {verdict: "warn", reason: "先登记 PR 才能出站"}
+    case "issue":
+      return hasArtifact ? {verdict: "pass"} : {verdict: "none"}
     default:
-      return node.status === "done" ? {verdict: "pass"} : {verdict: "none"}
+      return hasArtifact ? {verdict: "pass"} : {verdict: "warn", reason: "这一棒还没挂交付物（产物）"}
   }
 }
 

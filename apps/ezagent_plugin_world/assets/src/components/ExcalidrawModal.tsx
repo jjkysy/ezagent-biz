@@ -70,14 +70,18 @@ export function ExcalidrawModal({
             </Button>
           </div>
         </div>
-        <div className="min-h-0 flex-1">
-          <Suspense fallback={<div className="p-6 text-sm text-muted-foreground">加载画板中…</div>}>
-            <Excalidraw
-              excalidrawAPI={(a: unknown) => setApi(a as ExcalidrawAPI)}
-              initialData={initialData}
-              viewModeEnabled={readOnly}
-            />
-          </Suspense>
+        {/* relative + absolute-inset 给 excalidraw 一个**确定尺寸**的父级——否则它塌成 0 高度，
+            既画不了也存不了(api 拿不到 scene)。这是"比例不对/没法画/没法保存"的根因。 */}
+        <div className="relative min-h-0 flex-1">
+          <div style={{position: "absolute", inset: 0}}>
+            <Suspense fallback={<div className="p-6 text-sm text-muted-foreground">加载画板中…</div>}>
+              <Excalidraw
+                excalidrawAPI={(a: unknown) => setApi(a as ExcalidrawAPI)}
+                initialData={initialData}
+                viewModeEnabled={readOnly}
+              />
+            </Suspense>
+          </div>
         </div>
       </div>
     </div>
