@@ -234,7 +234,7 @@ defmodule Ezagent.Behavior.KanbanTest do
                Kanban.handle_set_stage(%{id: c, stage: "issue"}, admin_ctx(t))
     end
 
-    test "drop_subtree：砍子树 + 反哺最近 pain 祖先记一笔 drop_record", %{} do
+    test "drop_subtree：砍子树 + 记进图级别 drop 历史(:drops, 不挂某节点)", %{} do
       {t, _r, c} = seed()
       {:ok, _, e1} = Kanban.handle_set_stage(%{id: c, stage: "metric"}, admin_ctx(t))
       t1 = committed(e1)
@@ -251,8 +251,11 @@ defmodule Ezagent.Behavior.KanbanTest do
 
       t5 = committed(e5)
       refute Map.has_key?(t5.nodes, ggc), "子树应被砍掉"
-      # 最近 pain 祖先(痛点X)挂了一条 drop_record
-      assert Enum.any?(t5.nodes[gc].artifacts, &(&1.kind == "drop_record")), "pain 祖先应记一笔 drop"
+      # drop 历史进**图级别** :drops（不挂某个节点）
+      drops = Enum.find_value(e5, fn {:set, :drops, d} -> d; _ -> nil end)
+      assert [%{title: "方案A", reason: "7天阅读<500", count: 1}] = drops
+      # 痛点节点上**不再**挂 drop_record（历史是全图属性）
+      refute Enum.any?(t5.nodes[gc].artifacts, &(&1.kind == "drop_record"))
 
       # 非 owner 非 admin → forbidden
       assert {:error, :forbidden} =

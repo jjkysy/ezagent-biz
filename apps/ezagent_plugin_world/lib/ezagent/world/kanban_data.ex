@@ -146,11 +146,15 @@ defmodule Ezagent.World.KanbanData do
       })
 
     case result do
-      {:ok, %{tree: %{nodes: nodes, root_id: root} = t}} ->
-        %{"nodes" => jsonable_nodes(nodes, t), "root_id" => root}
+      {:ok, %{tree: %{nodes: nodes, root_id: root} = t} = res} ->
+        %{
+          "nodes" => jsonable_nodes(nodes, t),
+          "root_id" => root,
+          "drops" => Enum.map(Map.get(res, :drops, []), &jsonable_map/1)
+        }
 
       _ ->
-        %{"nodes" => %{}, "root_id" => nil}
+        %{"nodes" => %{}, "root_id" => nil, "drops" => []}
     end
   end
 

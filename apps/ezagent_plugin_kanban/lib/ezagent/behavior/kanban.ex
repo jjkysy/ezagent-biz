@@ -285,42 +285,24 @@ defmodule Ezagent.Behavior.Kanban do
         {:error, :forbidden}
 
       true ->
-        title = t.nodes[id].title
-        pain_id = nearest_pain_ancestor(t.nodes, t.nodes[id].parent_id)
+        node = t.nodes[id]
         dropped = subtree_ids(t.nodes, id)
         nodes1 = Map.drop(t.nodes, dropped)
-
-        # 反哺：若有未被砍掉的 pain 祖先，挂一条 drop 记录 artifact
-        nodes2 =
-          if pain_id && Map.has_key?(nodes1, pain_id) do
-            rec = %{
-              tool: "drop",
-              kind: "drop_record",
-              ref: "drop:" <> title,
-              url: nil,
-              content: "已 drop「#{title}」子树。原因：#{reason}"
-            }
-
-            Map.update!(nodes1, pain_id, fn n -> %{n | artifacts: n.artifacts ++ [rec]} end)
-          else
-            nodes1
-          end
-
         new_root = if id == t.root_id, do: nil, else: t.root_id
 
-        {:ok, %{dropped: length(dropped), pain: pain_id},
-         [commit(%{t | nodes: nodes2, root_id: new_root})]}
-    end
-  end
+        # drop 历史 = **图级别属性**（不挂某个节点）：任何棒 drop 都追加一条到 board 的 :drops log。
+        drop_entry = %{
+          title: node.title,
+          stage: to_string(node.stage),
+          reason: reason,
+          count: length(dropped)
+        }
 
-  # 从给定节点向上找最近的 stage==:pain 祖先（找不到返 nil）。
-  defp nearest_pain_ancestor(_nodes, nil), do: nil
-
-  defp nearest_pain_ancestor(nodes, id) do
-    case Map.get(nodes, id) do
-      %{stage: :pain} -> id
-      %{parent_id: pid} -> nearest_pain_ancestor(nodes, pid)
-      _ -> nil
+        {:ok, %{dropped: length(dropped)},
+         [
+           commit(%{t | nodes: nodes1, root_id: new_root}),
+           {:set, :drops, drops(ctx) ++ [drop_entry]}
+         ]}
     end
   end
 
@@ -461,7 +443,8 @@ defmodule Ezagent.Behavior.Kanban do
   @doc false
   def handle_get_tree(_args, ctx) do
     t = tree(ctx)
-    {:ok, %{tree: %{nodes: t.nodes, root_id: t.root_id}}, []}
+    # drops = 图级别 drop 历史（全图属性，随 tree 一起读出）
+    {:ok, %{tree: %{nodes: t.nodes, root_id: t.root_id}, drops: drops(ctx)}, []}
   end
 
   @doc false
@@ -516,6 +499,9 @@ defmodule Ezagent.Behavior.Kanban do
     do: new_node(p, t, o, :feature)
 
   defp tree(ctx), do: ctx[:read].(:tree, empty_tree())
+
+  # 图级别 drop 历史（全图属性）：每次 drop_subtree 追加一条 %{title, stage, reason, count}。
+  defp drops(ctx), do: ctx[:read].(:drops, [])
 
   # 全文唯一的 `{:set` 字面。
   defp commit(tree), do: {:set, :tree, tree}

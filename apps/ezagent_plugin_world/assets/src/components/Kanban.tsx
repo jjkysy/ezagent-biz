@@ -21,7 +21,8 @@ type Node = {
   ci?: {score: number; max: number; markdown: string; criteria: {name: string; ok: boolean}[]}
 }
 
-type Tree = {nodes: Record<string, Node>; root_id: string | null}
+type DropEntry = {title?: string; stage?: string; reason?: string; count?: number}
+type Tree = {nodes: Record<string, Node>; root_id: string | null; drops?: DropEntry[]}
 
 export type KanbanState = {
   component?: string
@@ -129,9 +130,13 @@ function KanbanDetail({state, onAction, onShare, onShareArtifact, onUploadFile}:
   const stages = state.stages || STAGES
   const statuses = state.statuses || ["claimed", "doing", "done"]
   const instances = state.instances || []
+  const drops = tree.drops || []
   const [rootTitle, setRootTitle] = useState("")
   const [newName, setNewName] = useState("")
   const [selectedId, setSelectedId] = useState<string | null>(tree.root_id)
+  // 本图配置（全图属性，侧边栏内联可见可编辑）
+  const [cfgRepo, setCfgRepo] = useState(state.config?.github_repo || "")
+  const [cfgMiro, setCfgMiro] = useState(state.config?.miro_board || "")
 
   // 切 board / 树变化后，选中节点若已不存在则回退到根
   useEffect(() => {
@@ -171,21 +176,6 @@ function KanbanDetail({state, onAction, onShare, onShareArtifact, onUploadFile}:
               <Send className="h-4 w-4" /> 分享
             </Button>
           )}
-          <Button
-            type="button"
-            size="sm"
-            variant="secondary"
-            title="本图配置：对应的 GitHub 仓库 + Miro 板名（一图一仓库/一板）"
-            onClick={() => {
-              const repo = window.prompt("本图的 GitHub 仓库（owner/name，如 jjkysy/test-ezagent）", state.config?.github_repo || "")
-              if (repo === null) return
-              const board = window.prompt("本图的 Miro 板名（按名字，id 看不见）", state.config?.miro_board || "")
-              if (board === null) return
-              onAction("kanban.set_board_config", {kanban_uri: uri, github_repo: repo.trim(), miro_board: board.trim()})
-            }}
-          >
-            ⚙ 配置
-          </Button>
           <Button type="button" size="sm" variant="secondary" title="同步到 Miro（建/复用本图对应的板）" onClick={() => onAction("kanban.sync_miro", {kanban_uri: uri})}>
             <RefreshCw className="h-4 w-4" /> Miro
           </Button>
@@ -212,8 +202,8 @@ function KanbanDetail({state, onAction, onShare, onShareArtifact, onUploadFile}:
           KanbanDetail 高度=header+这块固定高，不随左栏内容增长→外层 board 不滚→画布常驻。
           左栏在这固定高内 overflow-y-auto 自己滚。 */}
       <div className="flex h-[560px] gap-3 overflow-hidden">
-        {/* 侧边栏：导图列表 + 新建 + 选中节点属性（在固定高内独立滚动，不带动画布） */}
-        <aside className="flex w-72 flex-shrink-0 flex-col gap-3 overflow-hidden">
+        {/* 侧边栏：导图列表 + 本图配置 + drop历史 + 节点属性（整栏在固定高内滚动，宽松；不带动画布） */}
+        <aside className="flex w-72 flex-shrink-0 flex-col gap-3 overflow-y-auto pr-1">
           <div className="flex-shrink-0 rounded-md border border-border p-2">
             <div className="mb-1.5 text-xs font-semibold text-muted-foreground">导图</div>
             <ul className="flex max-h-32 flex-col gap-0.5 overflow-y-auto">
@@ -237,7 +227,43 @@ function KanbanDetail({state, onAction, onShare, onShareArtifact, onUploadFile}:
             </div>
           </div>
 
-          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto rounded-md border border-border p-2">
+          {/* 本图配置（全图属性，内联可见可编辑）——repo/miro板名按图配；token 在全局 */}
+          <div className="flex flex-shrink-0 flex-col gap-2 rounded-md border border-border p-2">
+            <div className="text-xs font-semibold text-muted-foreground">本图配置</div>
+            <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+              GitHub 仓库（owner/name）
+              <input className={`${inputCls} w-full`} placeholder="如 jjkysy/test-ezagent" value={cfgRepo} onChange={(e) => setCfgRepo(e.target.value)} />
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+              Miro 板名（按名字，id 看不见）
+              <input className={`${inputCls} w-full`} placeholder="如 我的产品看板" value={cfgMiro} onChange={(e) => setCfgMiro(e.target.value)} />
+            </label>
+            <div>
+              <Button type="button" size="sm" onClick={() => onAction("kanban.set_board_config", {kanban_uri: uri, github_repo: cfgRepo.trim(), miro_board: cfgMiro.trim()})}>
+                保存本图配置
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">GitHub token 在 Plugins → 看板 全局配。</p>
+          </div>
+
+          {/* drop 历史（全图属性）：任何棒 drop 都记一条，全图可见，不挂某个节点 */}
+          {drops.length > 0 && (
+            <div className="flex flex-shrink-0 flex-col rounded-md border border-border p-2">
+              <div className="mb-1.5 text-xs font-semibold text-muted-foreground">drop 历史（{drops.length}）</div>
+              <ul className="flex flex-col gap-1 text-xs">
+                {drops.map((d, i) => (
+                  <li key={i} className="flex items-start gap-1.5 rounded bg-amber-50 px-1.5 py-1 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400">
+                    <Scissors className="mt-0.5 h-3 w-3 flex-shrink-0" />
+                    <span className="flex-1 break-words">
+                      [{STAGE_LABEL[d.stage || ""] || d.stage}] {d.title} · 砍 {d.count} 节点{d.reason ? ` · ${d.reason}` : ""}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          <div className="flex flex-shrink-0 flex-col rounded-md border border-border p-2">
             <div className="mb-1.5 text-xs font-semibold text-muted-foreground">节点属性</div>
             {sel ? (
               <NodePanel node={sel} args={nodeArgs} stages={allowedStages} statuses={statuses} onAction={onAction} onShareArtifact={onShareArtifact} onUploadFile={onUploadFile} />
