@@ -71,7 +71,7 @@ function MindmapList({state, onAction}: {state: MindmapState; onAction: Act}) {
   return (
     <div className="flex max-w-2xl flex-col gap-4 p-6">
       <div>
-        <h2 className="text-lg font-semibold text-foreground">思维导图 · 配置</h2>
+        <h2 className="text-lg font-semibold text-foreground">看板 · 配置</h2>
         <p className="text-sm text-muted-foreground">配置出站连接器凭证（Miro / GitHub）。<strong>建树/认领/编辑在会话(session)里的 Mindmap 子视图</strong>，本页只配置。</p>
       </div>
       <div className="flex flex-col gap-3 rounded-md border border-border bg-card p-4">
@@ -155,7 +155,7 @@ function MindmapDetail({state, onAction, onShare, onShareArtifact, onUploadFile}
   return (
     <div className="flex h-full flex-col gap-3 p-5">
       <div className="flex items-center justify-between">
-        <h2 className="text-base font-semibold text-foreground">思维导图 · {uri.split("/").pop()}</h2>
+        <h2 className="text-base font-semibold text-foreground">看板 · {uri.split("/").pop()}</h2>
         <div className="flex items-center gap-2">
           {onShare && (
             <Button type="button" size="sm" variant="secondary" onClick={onShare}>

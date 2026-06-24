@@ -2,7 +2,7 @@ defmodule EzagentPluginMindmap.Application do
   @moduledoc """
   Mindmap plugin OTP application — the `Ezagent.Plugin` contract module.
 
-  df-prd 增量 1：思维导图双向打通。思维导图 = 一个 `EzagentPluginMindmap.Mindmap`
+  df-prd 增量 1：看板双向打通。看板 = 一个 `EzagentPluginMindmap.Mindmap`
   Kind 实例（`resource://<ws>/mindmap/<name>`，数据资源 Kind），节点树住在它的 state（真相源）；
   与 markmap markdown 文件双向同步。
 
@@ -25,7 +25,7 @@ defmodule EzagentPluginMindmap.Application do
     %{
       slug: "mindmap",
       name: "Mindmap",
-      description: "思维导图节点树 Kind + markmap 双向文件同步（df-prd 增量 1）。",
+      description: "看板节点树 Kind + markmap 双向文件同步（df-prd 增量 1）。",
       version: "0.1.0"
     }
   end
@@ -72,6 +72,6 @@ defmodule EzagentPluginMindmap.Application do
   # 挂产物/设指标/一键推 Miro（前端 `components/Mindmap.tsx` + `world/mindmap_{data,actions}.ex`）。
   @impl Ezagent.Plugin
   def config_surface do
-    %{kind: :route, path: "/plugins/mindmap", label: "思维导图"}
+    %{kind: :route, path: "/plugins/mindmap", label: "看板"}
   end
 end

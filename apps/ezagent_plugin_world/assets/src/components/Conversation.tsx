@@ -368,7 +368,7 @@ export function Conversation({
               </button>
               <button type="button" className={segmentClass(activeView === "mindmap")} onClick={() => sessionUri && onSwitchView(sessionUri, "mindmap")} aria-label="Show mindmap">
                 <Network aria-hidden="true" className="h-[15px] w-[15px]" />
-                Mindmap
+                看板
               </button>
               {isHelloSession && (
                 <button
@@ -419,7 +419,7 @@ export function Conversation({
               onShare={() => {
                 if (!sessionUri) return
                 const nm = (state.mindmap_uri || "").split("/").pop()
-                onSend(sessionUri, `${MINDMAP_CARD_TAG} 思维导图${nm ? ` · ${nm}` : ""}`, [])
+                onSend(sessionUri, `${MINDMAP_CARD_TAG} 看板${nm ? ` · ${nm}` : ""}`, [])
               }}
               onShareArtifact={(name, url) => sessionUri && onSend(sessionUri, `${ARTIFACT_CARD_TAG} ${name} ::: ${url}`, [])}
               onUploadFile={async (file) => {
@@ -486,7 +486,7 @@ export function Conversation({
                           >
                             <Network aria-hidden="true" className="h-4 w-4 text-primary" />
                             <span className="flex-1 text-sm font-medium text-foreground">
-                              {message.text.slice(MINDMAP_CARD_TAG.length).trim() || "思维导图"}
+                              {message.text.slice(MINDMAP_CARD_TAG.length).trim() || "看板"}
                             </span>
                             <span className="whitespace-nowrap text-xs text-muted-foreground">点击编辑 →</span>
                           </button>

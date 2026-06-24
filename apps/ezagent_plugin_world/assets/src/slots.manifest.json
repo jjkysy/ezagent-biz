@@ -157,7 +157,7 @@
       "category": "layout_slot",
       "data_source": "Ezagent.World.MindmapData",
       "renderer_family": "mindmap",
-      "title": "思维导图"
+      "title": "看板"
     },
     "observability": {
       "category": "layout_slot",
