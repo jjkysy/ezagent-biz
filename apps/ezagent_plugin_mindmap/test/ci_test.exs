@@ -41,4 +41,22 @@ defmodule EzagentPluginMindmap.CiTest do
   test "check_pr_gate：未知节点 → 空评价" do
     assert %{score: 0, max: 0} = Ci.check_pr_gate(tree(%{}), "nope")
   end
+
+  test "requirement_digest：沿祖先链汇总产品文档 + 指标（出站到 PR 的留言）" do
+    nodes = %{
+      "pos" => node(:positioning, :done, nil, [%{tool: "inline", kind: "doc", content: "让 X 用户一键完成下单"}]),
+      "feat" =>
+        Map.put(node(:feature, :done, "pos", [%{tool: "inline", kind: "spec", content: "Given 登录 When 下单 Then 成功"}]), :metrics, [
+          %{name: "周闭环数", target: "20"}
+        ]),
+      "pr" => node(:pr, :doing, "feat", [])
+    }
+
+    d = Ci.requirement_digest(tree(nodes), "pr")
+    assert d =~ "产品上下文"
+    assert d =~ "[定位]" and d =~ "让 X 用户一键完成下单"
+    assert d =~ "[功能卡]" and d =~ "Given 登录"
+    assert d =~ "指标 周闭环数：目标 20"
+    assert Ci.requirement_digest(tree(%{}), "nope") == ""
+  end
 end

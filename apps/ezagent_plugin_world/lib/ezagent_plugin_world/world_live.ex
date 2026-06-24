@@ -231,7 +231,7 @@ defmodule EzagentPluginWorld.WorldLive do
     ConversationActions.handle_dispatch(socket, action, args)
   end
 
-  @mindmap_actions ~w(mindmap.add_node mindmap.rename_node mindmap.move_node mindmap.remove_node mindmap.set_stage mindmap.claim_node mindmap.unclaim_node mindmap.set_status mindmap.attach_artifact mindmap.detach_artifact mindmap.set_metric mindmap.create mindmap.sync_miro mindmap.save_miro_creds mindmap.select_board mindmap.drop_subtree mindmap.sync_github mindmap.save_github_creds mindmap.attach_upload)
+  @mindmap_actions ~w(mindmap.add_node mindmap.rename_node mindmap.move_node mindmap.remove_node mindmap.set_stage mindmap.claim_node mindmap.unclaim_node mindmap.set_status mindmap.attach_artifact mindmap.detach_artifact mindmap.set_metric mindmap.create mindmap.sync_miro mindmap.save_miro_creds mindmap.select_board mindmap.drop_subtree mindmap.sync_github mindmap.save_github_creds mindmap.attach_upload mindmap.register_pr mindmap.sync_prs)
   def handle_event("world:dispatch", %{"action" => action, "args" => args}, socket)
       when action in @mindmap_actions and is_map(args) do
     Ezagent.World.MindmapActions.handle_dispatch(socket, action, args)

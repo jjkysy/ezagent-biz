@@ -104,6 +104,12 @@ defmodule Ezagent.World.MindmapActions do
       when is_binary(grant),
       do: attach_upload(socket, u, id, grant, Map.get(a, "name", "file"))
 
+  def handle_dispatch(socket, "mindmap.register_pr", %{"mindmap_uri" => u, "id" => id, "pr" => pr}),
+      do: register_pr(socket, u, id, pr)
+
+  def handle_dispatch(socket, "mindmap.sync_prs", %{"mindmap_uri" => u}),
+    do: sync_prs(socket, u)
+
   def handle_dispatch(socket, _action, _args),
     do: {:noreply, assign(socket, :last_dispatch_status, "error:unsupported_action")}
 
@@ -265,6 +271,152 @@ defmodule Ezagent.World.MindmapActions do
         end
     end
   end
+
+  # --- GitHub PR 闭环（确定性 worker）：登记 PR→出站产品需求摘要；轮询 PR→merged/closed→done -
+
+  # 登记 PR：先有配置页的仓库(定位仓库)，这里填 PR 号(定位 PR)→ 出站「产品需求摘要」留言到该 PR
+  # + 把 PR 回挂到节点。失败(无凭证/无仓库/401/404/连不上)都给干净错误码 → 前端中文提示。
+  defp register_pr(socket, uri_str, node_id, pr_in) do
+    case {parse(uri_str), to_pr_number(pr_in)} do
+      {%URI{} = uri, pr} when is_integer(pr) -> do_register_pr(socket, uri, node_id, pr)
+      {:error, _} -> gerr(socket, "bad_mindmap_uri")
+      {_, :error} -> gerr(socket, "bad_pr_number")
+    end
+  end
+
+  defp do_register_pr(socket, uri, node_id, pr) do
+    with {:ok, %{token: token, repo: repo}} when is_binary(repo) <-
+           EzagentPluginMindmap.Github.read_creds(),
+         {:ok, %{tree: %{nodes: nodes} = tree}} <- get_internal_tree(socket, uri),
+         true <- Map.has_key?(nodes, node_id) or {:error, :node_not_found},
+         digest = EzagentPluginMindmap.Ci.requirement_digest(tree, node_id),
+         {:ok, _url} <- EzagentPluginMindmap.Github.post_comment(token, repo, pr, digest) do
+      _ =
+        Invocation.dispatch(%Invocation{
+          target: Ezagent.URI.with_action(uri, :mindmap, :attach_artifact),
+          mode: :call,
+          args: %{
+            id: node_id,
+            artifact: %{
+              tool: "github",
+              kind: "pr",
+              ref: "##{pr}",
+              url: "https://github.com/#{repo}/pull/#{pr}"
+            }
+          },
+          ctx: ctx(socket)
+        })
+
+      {:noreply, push_tree(socket, uri, "ok")}
+    else
+      {:ok, %{repo: nil}} -> gerr(socket, "github_repo_missing")
+      {:error, :github_token_missing} -> gerr(socket, "github_token_missing")
+      {:error, :node_not_found} -> gerr(socket, "node_not_found")
+      {:error, reason} -> gerr(socket, gh_error(reason))
+      _ -> gerr(socket, "github_error")
+    end
+  end
+
+  # 轮询：遍历"登记过 PR 的节点"(不遍历全仓)，查 PR 状态；merged/closed → set_status done。
+  defp sync_prs(socket, uri_str) do
+    case {parse(uri_str), EzagentPluginMindmap.Github.read_creds()} do
+      {%URI{} = uri, {:ok, %{token: token, repo: repo}}} when is_binary(repo) ->
+        case get_internal_tree(socket, uri) do
+          {:ok, %{tree: %{nodes: nodes}}} ->
+            n = sync_pr_nodes(socket, uri, token, repo, nodes)
+
+            {:noreply,
+             push_tree(
+               socket,
+               uri,
+               if(n == :unreachable, do: "error:github_unreachable", else: "ok")
+             )}
+
+          _ ->
+            gerr(socket, "github_error")
+        end
+
+      {%URI{}, {:ok, %{repo: nil}}} ->
+        gerr(socket, "github_repo_missing")
+
+      {%URI{}, _} ->
+        gerr(socket, "github_token_missing")
+
+      _ ->
+        gerr(socket, "bad_mindmap_uri")
+    end
+  end
+
+  defp sync_pr_nodes(socket, uri, token, repo, nodes) do
+    Enum.reduce(nodes, :ok, fn {id, node}, acc ->
+      case node_pr(node) do
+        nil ->
+          acc
+
+        pr ->
+          case EzagentPluginMindmap.Github.get_pull(token, repo, pr) do
+            {:ok, %{merged: true}} -> advance_done(socket, uri, id)
+            {:ok, %{state: "closed"}} -> advance_done(socket, uri, id)
+            {:error, {:http_error, _}} -> :unreachable
+            _ -> acc
+          end
+      end
+    end)
+  end
+
+  defp advance_done(socket, uri, id) do
+    Invocation.dispatch(%Invocation{
+      target: Ezagent.URI.with_action(uri, :mindmap, :set_status),
+      mode: :call,
+      args: %{id: id, status: "done"},
+      ctx: ctx(socket)
+    })
+
+    :ok
+  end
+
+  # 从节点的 pr 产物里抠出 PR 号（"#42"→42）。
+  defp node_pr(node) do
+    node
+    |> Map.get(:artifacts, [])
+    |> Enum.find_value(fn a ->
+      if to_string(Map.get(a, :kind)) == "pr" do
+        case to_pr_number(to_string(Map.get(a, :ref))) do
+          n when is_integer(n) -> n
+          _ -> nil
+        end
+      end
+    end)
+  end
+
+  defp to_pr_number(pr) when is_integer(pr), do: pr
+
+  defp to_pr_number(pr) when is_binary(pr) do
+    case pr |> String.trim() |> String.trim_leading("#") |> Integer.parse() do
+      {n, _} -> n
+      :error -> :error
+    end
+  end
+
+  defp to_pr_number(_), do: :error
+
+  defp get_internal_tree(socket, %URI{} = uri) do
+    Invocation.dispatch(%Invocation{
+      target: Ezagent.URI.with_action(uri, :mindmap, :get_tree),
+      mode: :call,
+      args: %{},
+      ctx: ctx(socket)
+    })
+  end
+
+  # GitHub 失败 → 干净错误码（前端 dispatchError 映射成中文提示）。注：用 REST API(httpc)，不依赖 gh CLI。
+  defp gh_error({:http_status, code, _}) when code in [401, 403], do: "github_unauthorized"
+  defp gh_error({:http_status, 404, _}), do: "github_not_found"
+  defp gh_error({:http_status, code, _}), do: "github_http_#{code}"
+  defp gh_error({:http_error, _}), do: "github_unreachable"
+  defp gh_error(other), do: reason(other)
+
+  defp gerr(socket, code), do: {:noreply, assign(socket, :last_dispatch_status, "error:#{code}")}
 
   # --- 上传文件挂到节点（v1.5）：验 upload grant 取 uploads URI → attach_artifact ----
 

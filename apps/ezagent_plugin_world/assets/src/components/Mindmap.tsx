@@ -164,6 +164,9 @@ function MindmapDetail({state, onAction, onShare, onShareArtifact, onUploadFile}
           <Button type="button" size="sm" variant="secondary" onClick={() => onAction("mindmap.sync_miro", {mindmap_uri: uri})}>
             <RefreshCw className="h-4 w-4" /> 同步到 Miro
           </Button>
+          <Button type="button" size="sm" variant="secondary" title="轮询本图登记过的 PR：merged/closed 的自动推进到 done" onClick={() => onAction("mindmap.sync_prs", {mindmap_uri: uri})}>
+            <GitPullRequest className="h-4 w-4" /> 同步 PR 状态
+          </Button>
         </div>
       </div>
       {state.miro_board_url && (
@@ -393,6 +396,17 @@ function NodePanel({node, args, stages, statuses, onAction, onShareArtifact, onU
         </button>
         <button
           type="button"
+          className="inline-flex items-center gap-1 text-primary hover:underline"
+          title="登记一个已开的 PR（仓库在配置页定位）→ 出站「产品需求摘要」留言到该 PR"
+          onClick={() => {
+            const pr = window.prompt("已开 PR 的编号（如 42；仓库用配置页填的那个）")
+            if (pr && pr.trim()) onAction("mindmap.register_pr", {...args, pr: pr.trim()})
+          }}
+        >
+          <GitPullRequest className="h-3 w-3" /> 登记 PR
+        </button>
+        <button
+          type="button"
           className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"
           onClick={() => {
             const name = window.prompt("指标名（如 周闭环数）")
@@ -453,6 +467,12 @@ const DISPATCH_ERR: Record<string, string> = {
   name_required: "名称不能为空",
   invalid_workspace: "工作区无效",
   access_token_required: "缺 Miro access token",
+  github_token_missing: "GitHub 凭证未配置：去插件配置页填 access token",
+  github_repo_missing: "GitHub 仓库未配置：去插件配置页填 owner/name（先定位仓库）",
+  github_unauthorized: "GitHub 拒绝（401/403）：token 无效或权限不足",
+  github_not_found: "GitHub 404：仓库或 PR/issue 不存在（确认 owner/name 和编号）",
+  github_unreachable: "连不上 GitHub：检查网络（用 REST API，不需要装 gh / 不走 ssh）",
+  bad_pr_number: "PR 号无效：填数字，如 42",
 }
 function dispatchError(status?: string | null): string | null {
   if (!status || !status.startsWith("error:")) return null

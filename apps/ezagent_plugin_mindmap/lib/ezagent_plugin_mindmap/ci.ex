@@ -48,6 +48,58 @@ defmodule EzagentPluginMindmap.Ci do
 
   def check_pr_gate(_tree, _id), do: %{score: 0, max: 0, criteria: [], markdown: ""}
 
+  @stage_labels %{
+    positioning: "定位",
+    metric: "北极星",
+    pain: "痛点",
+    anchor: "认领映射",
+    ux: "线框",
+    feature: "功能卡",
+    issue: "issue",
+    test: "测试",
+    pr: "PR"
+  }
+
+  @doc """
+  产品需求摘要（出站到 PR 的留言）：沿 PR 节点的**祖先链**（定位→…→feature→…→pr）把每一棒
+  已有的文档（节点 content 产物）+ 指标拼成"本 PR 要满足的产品需求"。
+
+  **确定性汇总**（不是 LLM 综合，也不拉 GitHub 原始数据）——真相源在 ezagent，留言把产品上下文
+  带给 PR 评审。LLM 智能总结是 path B（要 mindmap agent，归 Allen）。
+  """
+  @spec requirement_digest(map(), String.t()) :: String.t()
+  def requirement_digest(%{nodes: nodes}, node_id) when is_map_key(nodes, node_id) do
+    sections =
+      nodes
+      |> ancestor_chain(node_id)
+      |> Enum.map(&digest_section/1)
+
+    "## 本 PR 的产品上下文（ezagent 自动汇总）\n\n" <>
+      Enum.join(sections, "\n\n") <> "\n\n———\n请确保实现满足以上产品需求。"
+  end
+
+  def requirement_digest(_tree, _id), do: ""
+
+  defp digest_section(n) do
+    label = Map.get(@stage_labels, stage(n), to_string(stage(n)))
+
+    docs =
+      arts(n)
+      |> Enum.map(&content/1)
+      |> Enum.reject(&(&1 == ""))
+      |> Enum.join("\n")
+
+    metrics =
+      n
+      |> Map.get(:metrics, [])
+      |> Enum.map(fn m -> "- 指标 #{afield(m, :name)}：目标 #{afield(m, :target)}" end)
+      |> Enum.join("\n")
+
+    ["### [#{label}] #{Map.get(n, :title)}", docs, metrics]
+    |> Enum.reject(&(&1 == "" or is_nil(&1)))
+    |> Enum.join("\n")
+  end
+
   # --- helpers（纯函数）---------------------------------------------------
 
   defp ancestor_chain(nodes, id, acc \\ []) do
