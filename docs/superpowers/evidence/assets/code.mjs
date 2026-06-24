@@ -50,9 +50,9 @@ try {
   p('建根+选中 ✓')
 
   // ① 本图配置：设 github 仓库 + miro 板名
-  await page.locator('button:has-text("本图配置")').click()
+  await page.locator('button:has-text("⚙ 配置")').click()
   await page.waitForTimeout(1500)
-  const cfgLabel = await page.locator('button:has-text("本图配置")').textContent()
+  await page.waitForSelector("text=GitHub: jjkysy", { timeout: 8000 }).catch(()=>{}); const cfgLabel = await page.locator("text=GitHub: REPO_REDACTED").textContent().catch(()=>"")
   p(`① 本图配置 → 按钮显示=${cfgLabel?.trim()}（应含 REPO_REDACTED）`)
   await page.screenshot({ path: `${SHOT}/code-1-config.png` })
 

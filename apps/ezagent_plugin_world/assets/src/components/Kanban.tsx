@@ -154,19 +154,28 @@ function KanbanDetail({state, onAction, onShare, onShareArtifact, onUploadFile}:
 
   return (
     <div className="flex h-full flex-col gap-3 p-5">
-      <div className="flex items-center justify-between">
-        <h2 className="text-base font-semibold text-foreground">看板 · {uri.split("/").pop()}</h2>
-        <div className="flex items-center gap-2">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="truncate text-base font-semibold text-foreground">看板 · {uri.split("/").pop()}</h2>
+          {(state.config?.github_repo || state.config?.miro_board) && (
+            <p className="truncate text-xs text-muted-foreground">
+              {state.config?.github_repo && <>GitHub: {state.config.github_repo}</>}
+              {state.config?.github_repo && state.config?.miro_board && " · "}
+              {state.config?.miro_board && <>Miro: {state.config.miro_board}</>}
+            </p>
+          )}
+        </div>
+        <div className="flex flex-shrink-0 items-center gap-1.5">
           {onShare && (
-            <Button type="button" size="sm" variant="secondary" onClick={onShare}>
-              <Send className="h-4 w-4" /> 分享到对话
+            <Button type="button" size="sm" variant="secondary" title="分享到对话" onClick={onShare}>
+              <Send className="h-4 w-4" /> 分享
             </Button>
           )}
           <Button
             type="button"
             size="sm"
             variant="secondary"
-            title="本图独立配置：对应的 GitHub 仓库 + Miro 板名（一图一仓库/一板）"
+            title="本图配置：对应的 GitHub 仓库 + Miro 板名（一图一仓库/一板）"
             onClick={() => {
               const repo = window.prompt("本图的 GitHub 仓库（owner/name，如 jjkysy/test-ezagent）", state.config?.github_repo || "")
               if (repo === null) return
@@ -175,13 +184,13 @@ function KanbanDetail({state, onAction, onShare, onShareArtifact, onUploadFile}:
               onAction("kanban.set_board_config", {kanban_uri: uri, github_repo: repo.trim(), miro_board: board.trim()})
             }}
           >
-            ⚙ 本图配置{state.config?.github_repo ? ` · ${state.config.github_repo}` : ""}
+            ⚙ 配置
           </Button>
-          <Button type="button" size="sm" variant="secondary" onClick={() => onAction("kanban.sync_miro", {kanban_uri: uri})}>
-            <RefreshCw className="h-4 w-4" /> 同步到 Miro
+          <Button type="button" size="sm" variant="secondary" title="同步到 Miro（建/复用本图对应的板）" onClick={() => onAction("kanban.sync_miro", {kanban_uri: uri})}>
+            <RefreshCw className="h-4 w-4" /> Miro
           </Button>
-          <Button type="button" size="sm" variant="secondary" title="轮询本图登记过的 PR：merged/closed 的自动推进到 done" onClick={() => onAction("kanban.sync_prs", {kanban_uri: uri})}>
-            <GitPullRequest className="h-4 w-4" /> 同步 PR 状态
+          <Button type="button" size="sm" variant="secondary" title="同步 PR 状态：轮询登记过的 PR，merged/closed 自动推进到 done" onClick={() => onAction("kanban.sync_prs", {kanban_uri: uri})}>
+            <GitPullRequest className="h-4 w-4" /> PR
           </Button>
         </div>
       </div>
@@ -204,7 +213,7 @@ function KanbanDetail({state, onAction, onShare, onShareArtifact, onUploadFile}:
           左栏在这固定高内 overflow-y-auto 自己滚。 */}
       <div className="flex h-[560px] gap-3 overflow-hidden">
         {/* 侧边栏：导图列表 + 新建 + 选中节点属性（在固定高内独立滚动，不带动画布） */}
-        <aside className="flex w-64 flex-shrink-0 flex-col gap-3 overflow-hidden">
+        <aside className="flex w-72 flex-shrink-0 flex-col gap-3 overflow-hidden">
           <div className="flex-shrink-0 rounded-md border border-border p-2">
             <div className="mb-1.5 text-xs font-semibold text-muted-foreground">导图</div>
             <ul className="flex max-h-32 flex-col gap-0.5 overflow-y-auto">
@@ -305,7 +314,7 @@ function NodePanel({node, args, stages, statuses, onAction, onShareArtifact, onU
           </ul>
         </div>
       )}
-      <div className="flex flex-wrap items-center gap-1">
+      <div className="flex items-center gap-1.5">
         <Button type="button" size="sm" variant="secondary" title="给本节点加一个子节点（接力链下一棒）" onClick={() => {
           const t = window.prompt("子节点标题（接力链下一棒，如 北极星指标）")
           if (t && t.trim()) onAction("kanban.add_node", {kanban_uri: args.kanban_uri, parent_id: args.id, title: t.trim()})
@@ -315,15 +324,23 @@ function NodePanel({node, args, stages, statuses, onAction, onShareArtifact, onU
         <Button type="button" size="sm" variant="secondary" onClick={() => onAction("kanban.claim_node", args)}>
           <Hand className="h-3.5 w-3.5" /> 认领
         </Button>
-        {/* 回显当前值(issue1: 改完看得到、不再绑空串显得"没存") */}
-        <select className={selectCls} value={statuses.includes(node.status || "") ? node.status || "" : ""} onChange={(e) => e.target.value && onAction("kanban.set_status", {...args, status: e.target.value})}>
-          <option value="">状态…</option>
-          {statuses.map((s) => (<option key={s} value={s}>{s}</option>))}
-        </select>
-        <select className={selectCls} value={node.stage || ""} onChange={(e) => e.target.value && onAction("kanban.set_stage", {...args, stage: e.target.value})}>
-          <option value="">阶段…</option>
-          {stages.map((s) => (<option key={s} value={s}>{STAGE_LABEL[s] || s}</option>))}
-        </select>
+      </div>
+      <div className="flex items-center gap-3 text-xs text-muted-foreground">
+        <label className="flex items-center gap-1">
+          状态
+          {/* 回显当前值(issue1: 改完看得到) */}
+          <select className={selectCls} value={statuses.includes(node.status || "") ? node.status || "" : ""} onChange={(e) => e.target.value && onAction("kanban.set_status", {...args, status: e.target.value})}>
+            <option value="">—</option>
+            {statuses.map((s) => (<option key={s} value={s}>{s}</option>))}
+          </select>
+        </label>
+        <label className="flex items-center gap-1">
+          阶段
+          <select className={selectCls} value={node.stage || ""} onChange={(e) => e.target.value && onAction("kanban.set_stage", {...args, stage: e.target.value})}>
+            <option value="">—</option>
+            {stages.map((s) => (<option key={s} value={s}>{STAGE_LABEL[s] || s}</option>))}
+          </select>
+        </label>
       </div>
       <div>
         <div className="text-xs font-semibold text-muted-foreground">产物（{node.artifacts?.length ?? 0}）</div>
@@ -393,7 +410,8 @@ function NodePanel({node, args, stages, statuses, onAction, onShareArtifact, onU
             </div>
           </div>
         ) : (
-          <div className="mt-1 flex gap-3 text-xs">
+          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs">
+            <span className="text-muted-foreground">挂：</span>
             <button
               type="button"
               className="inline-flex items-center gap-1 text-primary hover:underline"
