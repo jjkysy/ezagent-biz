@@ -78,33 +78,23 @@ defmodule EzagentPluginMindmap.Miro.Sync do
 
   defp artifacts_tag([]), do: ""
 
-  # 系统未上线、大家只能在 Miro 上看 → 把挂载文档的**真信息**（URL / 内容片段）也编进 label，
-  # 不只显示个数。固定形态：📎 名字(url) · 名字:内容片段。最多 4 条，内容截 60 字防 label 过长。
+  # Miro 是**概览投影**：显示挂了哪些附件（名字 + 有外链就给链接），**不塞附件内容**
+  # （inline content / excalidraw JSON 塞进 label 是噪音）。内容/分享走 ezagent（节点 + 发对话）。
   defp artifacts_tag(as) do
     body =
       as
-      |> Enum.take(4)
+      |> Enum.take(6)
       |> Enum.map_join(" · ", &one_artifact/1)
 
-    extra = if length(as) > 4, do: " …+#{length(as) - 4}", else: ""
+    extra = if length(as) > 6, do: " …+#{length(as) - 6}", else: ""
     "📎 " <> body <> extra
   end
 
   defp one_artifact(a) do
     name = html_escape(to_string(Map.get(a, :ref) || Map.get(a, :kind) || "产物"))
     url = Map.get(a, :url)
-    content = Map.get(a, :content)
 
-    cond do
-      is_binary(url) and url != "" ->
-        "#{name}(#{html_escape(url)})"
-
-      is_binary(content) and content != "" ->
-        "#{name}: #{html_escape(String.slice(content, 0, 60))}"
-
-      true ->
-        name
-    end
+    if is_binary(url) and url != "", do: "#{name}(#{html_escape(url)})", else: name
   end
 
   defp html_escape(s) do

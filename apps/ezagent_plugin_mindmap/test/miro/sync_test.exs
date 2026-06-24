@@ -97,9 +97,9 @@ defmodule EzagentPluginMindmap.Miro.SyncTest do
       c = Sync.render_content(node)
       assert c =~ "◑" and c =~ "[dev]" and c =~ "功能A"
       assert c =~ "<b>@alice</b>" and c =~ "📊周闭环:1/2"
-      # 文档真信息进 label（不只个数）：URL + 内容片段都在
-      assert c =~ "#1(https://github.com/o/r/pull/1)"
-      assert c =~ "spec卡: Given X When Y Then Z"
+      # Miro 概览：附件显示名字 + 有外链给链接；**不塞内容**(excalidraw JSON/Gherkin 内容是噪音)
+      assert c =~ "📎" and c =~ "spec卡" and c =~ "#1(https://github.com/o/r/pull/1)"
+      refute c =~ "Given X When Y Then Z"
       refute c =~ "<p>"
     end
 
