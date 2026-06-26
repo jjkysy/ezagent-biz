@@ -54,3 +54,6 @@ __pycache__/
 
 # rh personal scratch (chenruihua) — not for the repo
 docs/rh/
+
+# macOS Finder metadata
+.DS_Store
