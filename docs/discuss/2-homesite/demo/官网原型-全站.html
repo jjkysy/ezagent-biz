@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ezagent · 跨境团队的 AI 员工队</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Mono:wght@400;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --cream:#ffffff; --oat:#e0e2e6; --oat-light:#f8fafc;
+    --silver:#9f9b93; --charcoal:#55534e; --ink:#181d26;
+    --matcha:#1b61c9; --matcha-300:#dbeafe; --matcha-deep:#01418d;
+    --lemon:#f59e0b; --lemon-400:#fbbf24; --lemon-800:#78350f;
+    --slushie:#0369a1; --slushie-300:#e0f2fe;
+    --shadow:rgba(15,23,42,.04) 0 1px 2px, rgba(15,23,42,.03) 0 0 0 1px;
+    --lift:0 1px 2px rgba(15,23,42,.05), 0 10px 30px rgba(15,48,106,.06);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--cream);color:var(--ink);
+    font-family:'Inter','Noto Sans SC',-apple-system,BlinkMacSystemFont,sans-serif;
+    font-feature-settings:"ss01","ss03";-webkit-font-smoothing:antialiased;line-height:1.55}
+  .mono{font-family:'Space Mono',monospace;font-size:.9em}
+  .label{display:inline-block;text-transform:uppercase;font-size:12px;font-weight:600;letter-spacing:1.08px;color:var(--charcoal)}
+  h1,h2,h3{letter-spacing:-.4px;margin:0}
+  a{color:inherit;text-decoration:none}
+  .wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+  [hidden]{display:none!important}
+
+  /* nav */
+  .nav{position:sticky;top:0;z-index:30;background:rgba(255,255,255,.86);backdrop-filter:blur(10px);border-bottom:1px solid var(--oat)}
+  .nav .row{max-width:1080px;margin:0 auto;padding:13px 22px;display:flex;align-items:center;gap:24px}
+  .brand{font-weight:700;font-size:16px;letter-spacing:-.3px;display:flex;align-items:center;gap:8px;cursor:pointer}
+  .brand .logo{width:24px;height:24px;border-radius:7px;background:var(--matcha);display:inline-flex;align-items:center;justify-content:center;color:#fff;font-size:13px;font-weight:800}
+  .nav .links{display:flex;gap:6px}
+  .nav .links button{border:0;background:transparent;font-family:inherit;font-size:14px;font-weight:600;
+    color:var(--charcoal);cursor:pointer;padding:7px 12px;border-radius:8px;transition:.15s}
+  .nav .links button:hover{color:var(--matcha);background:var(--oat-light)}
+  .nav .links button.on{color:var(--matcha);background:var(--matcha-300)}
+  .nav .cta{margin-left:auto}
+
+  .btn{border:1.5px solid var(--oat);background:#fff;border-radius:10px;padding:8px 15px;font-size:13px;font-weight:650;
+    cursor:pointer;color:var(--ink);transition:.15s;display:inline-flex;gap:6px;align-items:center;font-family:inherit}
+  .btn:hover{border-color:var(--matcha)}
+  .btn.primary{background:var(--matcha);color:#fff;border-color:var(--matcha)}
+  .btn.primary:hover{background:var(--matcha-deep)}
+  .btn.on{color:var(--matcha);border-color:var(--matcha);background:var(--matcha-300)}
+  .btn.sm{padding:5px 11px;font-size:12px}
+  .btn.lg{padding:11px 20px;font-size:14.5px;border-radius:12px}
+
+  .clay{background:#fff;border:1px solid var(--oat);border-radius:16px;box-shadow:var(--shadow)}
+  .tag{display:inline-flex;align-items:center;padding:3px 11px;border-radius:999px;font-size:11.5px;font-weight:600;
+    background:var(--oat-light);color:var(--charcoal);border:1px solid var(--oat)}
+  .tag.live{background:var(--matcha-300);color:var(--matcha-deep);border-color:var(--matcha)}
+  .tag.wip{background:#fdf1e3;color:var(--lemon-800);border-color:var(--lemon-400)}
+  .tag.planned{background:#eef1f6;color:#475569;border-color:#cbd5e1}
+  .tag.scene{background:var(--slushie-300);color:var(--slushie);border-color:#7dd3fc}
+  .tags{display:inline-flex;gap:6px;flex-wrap:wrap;align-items:center}
+
+  /* ===== HOME ===== */
+  .home-hero{padding:74px 0 40px;text-align:center}
+  .home-hero h1{font-size:46px;line-height:1.12;margin:16px auto 16px;max-width:760px}
+  @media(max-width:640px){.home-hero h1{font-size:33px}}
+  .home-hero p.lead{font-size:17px;color:var(--charcoal);max-width:600px;margin:0 auto}
+  .home-hero .acts{display:flex;gap:12px;justify-content:center;margin-top:28px;flex-wrap:wrap}
+
+  .band{padding:42px 0;border-top:1px solid var(--oat)}
+  .band .label{display:block;text-align:center}
+  .band h2{font-size:28px;text-align:center;margin:8px auto 10px;max-width:680px}
+  .band p.sub{text-align:center;color:var(--charcoal);max-width:600px;margin:0 auto;font-size:15px}
+
+  .cap{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:30px}
+  @media(max-width:760px){.cap{grid-template-columns:1fr}}
+  .cap .c{padding:22px 22px}
+  .cap .c .ic{width:38px;height:38px;border-radius:11px;background:var(--matcha-300);color:var(--matcha-deep);
+    display:flex;align-items:center;justify-content:center;font-size:19px;margin-bottom:13px}
+  .cap .c h3{font-size:17px;margin-bottom:6px}
+  .cap .c p{margin:0;font-size:13.5px;color:var(--charcoal)}
+
+  .metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:26px}
+  @media(max-width:720px){.metrics{grid-template-columns:repeat(2,1fr)}}
+  .metric{padding:16px 18px;text-align:left}
+  .metric .n{font-size:26px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.5px}
+  .metric .n small{font-size:13px;color:var(--silver);font-weight:600;margin-left:2px}
+  .metric .k{font-size:12.5px;color:var(--charcoal);margin-top:1px}
+  .band .center{text-align:center;margin-top:26px}
+
+  /* ===== ROADMAP（成果与路线图） ===== */
+  .sec{padding:34px 0 10px}
+  .sec-head{margin-bottom:14px}
+  .sec-head h2{font-size:25px;margin:5px 0 6px}
+  .sec-head p{margin:0;color:var(--charcoal);font-size:14px;max-width:660px}
+  .viewtabs{display:inline-flex;background:var(--oat-light);border:1px solid var(--oat);border-radius:999px;padding:4px;gap:3px;margin:8px 0}
+  .viewtabs button{border:0;background:transparent;padding:8px 17px;border-radius:999px;cursor:pointer;font-size:13.5px;font-weight:650;color:var(--charcoal);font-family:inherit;transition:.15s}
+  .viewtabs button.on{background:#fff;color:var(--matcha);box-shadow:var(--shadow)}
+  .viewhint{font-size:12.5px;color:var(--silver);margin:8px 0 18px}
+
+  .vote{display:inline-flex;align-items:center;gap:7px;border:1.5px solid var(--oat);background:#fff;border-radius:999px;padding:6px 13px;cursor:pointer;font-weight:700;font-size:13px;transition:.14s;color:var(--ink);font-family:inherit}
+  .vote:hover{border-color:var(--matcha)}
+  .vote.on{background:var(--matcha);color:#fff;border-color:var(--matcha)}
+  .vote.sm{padding:4px 10px;font-size:12px}
+
+  .ach{padding:14px 15px;display:flex;flex-direction:column;gap:8px}
+  .ach .atop{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .ach .atitle{font-size:14px;font-weight:700}
+  .ach .when{margin-left:auto;font-size:11.5px;color:var(--silver)}
+  .ach .asum{font-size:12.5px;color:var(--charcoal);margin:0}
+  .ach .aacts{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-top:1px}
+  .cbox{margin-top:6px;display:none;flex-direction:column;gap:7px}
+  .cbox.show{display:flex}
+  .cbox textarea{width:100%;border:1.5px solid var(--oat);border-radius:9px;padding:8px 10px;font-size:12.5px;resize:vertical;min-height:44px;font-family:inherit}
+  .clist{list-style:none;margin:6px 0 0;padding:0;display:flex;flex-direction:column;gap:5px}
+  .clist li{font-size:12px;background:var(--oat-light);border-radius:8px;padding:6px 10px;color:#3a425a}
+
+  .pos{margin-top:22px}
+  .pos-head{display:flex;align-items:flex-start;gap:12px}
+  .pos-bar{width:5px;align-self:stretch;border-radius:3px;background:var(--matcha);flex:none;min-height:36px}
+  .pos-head h3{font-size:17px;font-weight:750}
+  .pos-head .pos-vote{margin-left:auto}
+  .pains{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px;margin-top:13px}
+  @media(max-width:760px){.pains{grid-template-columns:1fr}}
+  .pain{padding:14px 15px;display:flex;flex-direction:column;gap:10px}
+  .pain.hot{border-color:#ffd8a8}
+  .pain .ptext{font-size:14px;font-weight:650}
+  .pain .hotbadge{font-size:10.5px;font-weight:800;color:var(--lemon-800);background:#fdf1e3;border:1px solid var(--lemon-400);border-radius:6px;padding:2px 7px;white-space:nowrap}
+  .pain .pfoot{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+  .expand{font-size:12.5px;color:var(--matcha);font-weight:700;cursor:pointer;background:none;border:0;padding:4px;font-family:inherit}
+  .expand:hover{text-decoration:underline}
+  .ach-sub{display:flex;flex-direction:column;gap:9px;margin-top:2px}
+  .ach-sub .ach{border:1px solid var(--oat);border-radius:12px;background:#fcfdfe}
+
+  .tl{margin-top:18px;position:relative;padding-left:30px}
+  .tl::before{content:"";position:absolute;left:9px;top:6px;bottom:6px;width:2px;background:var(--oat)}
+  .tl-group{position:relative;margin-bottom:26px}
+  .tl-q{font-size:13px;font-weight:750;color:var(--matcha);margin:0 0 10px;display:flex;align-items:center;gap:8px}
+  .tl-q .dot{position:absolute;left:-25px;width:14px;height:14px;border-radius:50%;background:var(--matcha);border:3px solid #fff;box-shadow:0 0 0 1px var(--oat)}
+  .tl-q.future{color:var(--charcoal)} .tl-q.future .dot{background:#cbd5e1}
+  .tl-items{display:flex;flex-direction:column;gap:11px}
+  .pcard{display:flex;flex-direction:column;gap:8px;padding:14px 15px}
+  .pcard .ptext{font-size:14px;font-weight:650}
+
+  .scenes{display:flex;flex-direction:column;gap:18px;margin-top:18px}
+  .scene{padding:16px 18px}
+  .scene-head{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+  .scene-head h3{font-size:16px}
+  .scene-head .cnt{font-size:12px;color:var(--silver);margin-left:auto}
+  .scene .items{display:flex;flex-direction:column;gap:11px}
+  .scene .items .ach,.scene .items .pcard{border:1px solid var(--oat);border-radius:12px;background:#fcfdfe}
+
+  .loombar{position:fixed;left:0;right:0;bottom:0;background:rgba(255,255,255,.92);backdrop-filter:blur(10px);border-top:1px solid var(--oat);padding:11px 22px;z-index:40}
+  .loombar .inner{max-width:1080px;margin:0 auto;display:flex;align-items:center;gap:12px}
+  .loombar input{flex:1;border:1.5px solid var(--oat);border-radius:999px;padding:11px 18px;font-size:13.5px;background:#fff;font-family:inherit}
+  .loombar .send{background:var(--matcha);color:#fff;border:0;border-radius:999px;padding:11px 18px;font-weight:700;font-size:13.5px;cursor:not-allowed;opacity:.85;font-family:inherit}
+  .loombar .note{font-size:10.5px;color:var(--silver);white-space:nowrap}
+  @media(max-width:640px){.loombar .note{display:none}}
+
+  footer{margin-top:30px;padding:20px 0 130px;font-size:12px;color:var(--silver);line-height:1.8;border-top:1px solid var(--oat)}
+  footer code{background:var(--oat-light);padding:1px 5px;border-radius:4px;font-family:'Space Mono',monospace}
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="row">
+    <div class="brand" data-nav="home"><span class="logo">E</span>Ezagent</div>
+    <div class="links">
+      <button data-nav="home">首页</button>
+      <button data-nav="roadmap">成果与路线图</button>
+      <button onclick="return false">关于</button>
+    </div>
+    <button class="btn primary cta" data-nav="roadmap">🧪 试用成果</button>
+  </div>
+</nav>
+
+<!-- ===================== 首页（普通官网） ===================== -->
+<main data-page-panel="home">
+  <div class="wrap">
+    <section class="home-hero">
+      <span class="label">跨境团队的 AI 员工队</span>
+      <h1>把 AI 变成跨境团队<br>真正用得上的一双手</h1>
+      <p class="lead">客服、选品、营销——我们把 AI 一件件做成你每天能用的工具，公开可见、还能让你投票决定我们先做哪个。</p>
+      <div class="acts">
+        <button class="btn primary lg" data-nav="roadmap">看我们做到哪了 →</button>
+        <button class="btn lg" data-nav="roadmap">🧪 试用成果</button>
+      </div>
+    </section>
+  </div>
+
+  <div class="band">
+    <div class="wrap">
+      <span class="label">我们相信</span>
+      <h2>AI 的价值，要落进每天的活儿里，而不是停在演示里</h2>
+      <p class="sub">跨境小团队人手紧、什么都自己扛。我们不做炫技 demo，只做能真正接住活的 AI——做一个、上线一个、让你用上一个。</p>
+    </div>
+  </div>
+
+  <div class="band">
+    <div class="wrap">
+      <span class="label">我们在做什么</span>
+      <h2>三条线，覆盖跨境生意最累的环节</h2>
+      <div class="cap">
+        <div class="clay c"><div class="ic">💬</div><h3>AI 客服</h3><p>旺季重复咨询自动接住、多语言不漏单，人力降一半。</p></div>
+        <div class="clay c"><div class="ic">📊</div><h3>AI 选品</h3><p>聚合多平台数据看趋势、盯竞品异动，不再拍脑袋。</p></div>
+        <div class="clay c"><div class="ic">✍️</div><h3>AI 营销</h3><p>一次输入，自动适配各平台调性，文案一键铺开。</p></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="band">
+    <div class="wrap">
+      <span class="label">公开共建 · BUILD IN PUBLIC</span>
+      <h2>我们做到哪了，你看得见、还能投票</h2>
+      <p class="sub">所有成果都来自我们真实的研发进度——不画饼。给你在意的痛点投票，影响我们先做什么。</p>
+      <div class="metrics" id="home-metrics"></div>
+      <div class="center"><button class="btn primary lg" data-nav="roadmap">进成果与路线图 →</button></div>
+    </div>
+  </div>
+</main>
+
+<!-- ===================== 成果与路线图（tab） ===================== -->
+<main data-page-panel="roadmap" hidden>
+  <div class="wrap">
+    <section class="sec">
+      <div class="sec-head">
+        <span class="label">关键页面 · 成果与路线图</span>
+        <h2>换个角度看我们的成果</h2>
+        <p>同一批成果与计划，三种视角任你切：按<b>时间线</b>看一路怎么走来、按<b>价值</b>看大家最想要什么、按<b>场景</b>看跟你相关的那块。</p>
+      </div>
+      <div class="viewtabs" id="viewtabs"></div>
+      <div class="viewhint" id="viewhint"></div>
+      <div id="view"></div>
+    </section>
+  </div>
+</main>
+
+<div class="wrap">
+  <footer>
+    访客版前端原型 · 首页(普通官网) + 「成果与路线图」tab + <code>loom</code> 对话框 · 设计参考 <code>reveal-clay-product-deck</code>（clay）/ 结构参考 claude.com。<br>
+    数据 = <code>mock</code>（结构见 <code>W-成果生产工作流.md</code> §四，真实数据由 GitHub 工作流接入）· 投票/评论/点赞/订阅存官网自有库 · 底部对话框 = loom 底座、本需求不实现。
+  </footer>
+</div>
+
+<div class="loombar">
+  <div class="inner">
+    <input placeholder="描述你的场景，页面为你重构…（loom 底座功能，原型未接）" disabled>
+    <button class="send" disabled>发送</button>
+    <span class="note">loom 底座 · 不在本需求</span>
+  </div>
+</div>
+
+<script>
+/* 内容（声明式）— 对齐 W-成果生产工作流.md §四：定位→痛点(主投票单元)→成果。issue 隐藏。 */
+const DATA = { 定位:[
+  { id:'pos-kefu', title:'让跨境小老板用 AI 把重复客服自动接住', votes:51, 痛点:[
+    { id:'p-kf1', gc:'旺季重复咨询占满人力，根本回不过来', 域:'跨境', 场景:'客服', votes:42, 成果:[
+      {prId:312,title:'AI 自动客服 v1',summary:'接入工单，自动答高频问题，人力降一半。',场景:'客服',when:'2025 Q1',status:'live',tryUrl:'#',likes:28,comments:['旺季帮大忙','希望支持多语言']},
+      {prId:340,title:'多语言客服',summary:'英/西/阿语自动应答，跨时区不漏单。',场景:'客服',when:'2025 Q3',status:'wip',tryUrl:'',likes:11,comments:['等这个很久了']},
+    ]},
+    { id:'p-kf2', gc:'客服答得不一致、新人培训慢', 域:'跨境', 场景:'客服', votes:18, 成果:[
+      {prId:301,title:'话术知识库自动沉淀',summary:'把历史优质回复自动结构化成话术库。',场景:'客服',when:'2025 Q1',status:'live',tryUrl:'#',likes:14,comments:[]},
+    ]},
+  ]},
+  { id:'pos-xuanpin', title:'让选品不靠拍脑袋，用 AI 看数据', votes:38, 痛点:[
+    { id:'p-xp1', gc:'选品靠感觉，爆款总是抓不住', 域:'跨境', 场景:'选品', votes:35, 成果:[
+      {prId:355,title:'选品趋势雷达',summary:'聚合多平台搜索/销量信号，预警上升品类。',场景:'选品',when:'2025 Q3',status:'wip',tryUrl:'',likes:19,comments:['很需要','能加 TikTok 数据吗']},
+    ]},
+    { id:'p-xp2', gc:'竞品监控全靠手工表格，累且慢', 域:'跨境', 场景:'选品', votes:21, 成果:[
+      {prId:333,title:'竞品自动监控',summary:'盯价格/库存/评分变化，异动推送。',场景:'选品',when:'2025 Q2',status:'live',tryUrl:'#',likes:16,comments:['省了我一个人']},
+    ]},
+  ]},
+  { id:'pos-marketing', title:'让营销内容一键铺开多平台', votes:24, 痛点:[
+    { id:'p-mk1', gc:'每个平台重写一遍文案，累死', 域:'跨境', 场景:'营销', votes:29, 成果:[
+      {prId:360,title:'多平台文案生成',summary:'一次输入，自动适配各平台调性与字数。',场景:'营销',when:'2025 Q2',status:'live',tryUrl:'#',likes:22,comments:['好用','希望能配图']},
+    ]},
+    { id:'p-mk2', gc:'不知道什么时间发效果最好', 域:'跨境', 场景:'营销', votes:9, 成果:[] },
+  ]},
+  { id:'pos-wuliu', title:'让物流异常早发现、少赔钱', votes:12, 痛点:[
+    { id:'p-wl1', gc:'物流异常发现太晚，客诉先爆了', 域:'跨境', 场景:'物流', votes:15, 成果:[] },
+  ]},
+]};
+
+/* 形（渲染+交互） */
+let page='home', view='value';
+const voted=new Set(), liked=new Set(), subscribed=new Set(), openPains=new Set();
+const localComments={};
+const $=s=>document.querySelector(s);
+
+function allPains(){ return DATA.定位.flatMap(p=>p.痛点.map(t=>({...t}))); }
+function allAch(){ return DATA.定位.flatMap(pos=>pos.痛点.flatMap(p=>p.成果.map(a=>({...a, painId:p.id})))); }
+function plannedPains(){ return allPains().filter(p=>p.成果.length===0); }
+function hottestPainId(){ let b=null; allPains().forEach(p=>{if(!b||p.votes>b.votes)b=p;}); return b?b.id:null; }
+
+function statusTag(s){ return s==='live'?'<span class="tag live">● 已上线</span>':s==='wip'?'<span class="tag wip">◌ 进行中</span>':'<span class="tag planned">○ 计划中</span>'; }
+function votePill(id,votes,sm){ const on=voted.has(id), n=votes+(on?1:0);
+  return `<button class="vote${sm?' sm':''}${on?' on':''}" data-vote="${id}"><span>▲</span><span>${n}</span><span style="font-weight:600;opacity:.85">${on?'已投':'投票'}</span></button>`; }
+function subBtn(id){ const on=subscribed.has(id);
+  return `<button class="btn sm${on?' on':''}" data-sub="${id}">${on?'✓ 已订阅':'🔔 订阅上线通知'}</button>`; }
+
+function achCard(a,opts={}){
+  const isLiked=liked.has(a.prId), likeN=a.likes+(isLiked?1:0);
+  const cmts=(a.comments||[]).concat(localComments[a.prId]||[]);
+  const tryBtn=(a.status==='live'&&a.tryUrl)?`<a class="btn primary sm" href="${a.tryUrl}" onclick="return false">🧪 试玩</a>`:'';
+  const subB=(a.status==='wip')?subBtn('a'+a.prId):'';
+  const sceneTag=opts.hideScene?'':`<span class="tag scene">${a.场景}</span>`;
+  return `<div class="clay ach">
+    <div class="atop">${statusTag(a.status)}<span class="atitle">${a.title}</span>${sceneTag}<span class="when mono">${a.when||''}</span></div>
+    <p class="asum">${a.summary}</p>
+    <div class="aacts">${tryBtn}${subB}
+      <button class="btn sm${isLiked?' on':''}" data-like="${a.prId}">❤ ${likeN}</button>
+      <button class="btn sm" data-cmt="${a.prId}">💬 ${cmts.length}</button></div>
+    <div class="cbox" id="cbox-${a.prId}">
+      <textarea placeholder="说说你的想法 / 你也有这个需求…"></textarea>
+      <div><button class="btn primary sm" data-csubmit="${a.prId}">提交</button></div>
+      <ul class="clist">${cmts.map(c=>`<li>💬 ${c}</li>`).join('')}</ul></div>
+  </div>`;
+}
+function plannedCard(p,opts={}){
+  const sceneTag=opts.hideScene?'':`<span class="tag scene">${p.场景}</span>`;
+  return `<div class="clay pcard">
+    <div class="tags">${statusTag('planned')}<span class="ptext">${p.gc}</span>${sceneTag}</div>
+    <div class="tags">${votePill(p.id,p.votes,true)}${subBtn(p.id)}<span class="mono" style="color:var(--silver);font-size:11px">待投票决定优先级</span></div>
+  </div>`;
+}
+
+function renderValue(){
+  const hot=hottestPainId();
+  return DATA.定位.map(pos=>{
+    const pains=[...pos.痛点].sort((a,b)=>b.votes-a.votes);
+    return `<div class="pos"><div class="pos-head"><div class="pos-bar"></div>
+      <div><span class="label">战略定位</span><h3>${pos.title}</h3></div>
+      <div class="pos-vote">${votePill(pos.id,pos.votes,true)}</div></div>
+      <div class="pains">${pains.map(p=>painNode(p,hot)).join('')}</div></div>`;
+  }).join('');
+}
+function painNode(p,hot){
+  const open=openPains.has(p.id);
+  const live=p.成果.filter(a=>a.status==='live').length, wip=p.成果.filter(a=>a.status==='wip').length;
+  const foot=p.成果.length?`<button class="expand" data-exp="${p.id}">${open?'收起 ▲':`${live} 成果 · ${wip} 进行中 ▾`}</button>`:subBtn(p.id);
+  return `<div class="clay pain${p.id===hot?' hot':''}">
+    <div class="tags"><span class="ptext">${p.gc}</span>${p.id===hot?'<span class="hotbadge">🔥 最想要</span>':''}</div>
+    <div class="tags"><span class="tag scene">${p.场景}</span>${p.成果.length?'':statusTag('planned')}</div>
+    <div class="pfoot">${votePill(p.id,p.votes)}${foot}</div>
+    ${open?`<div class="ach-sub">${p.成果.map(a=>achCard(a,{hideScene:true})).join('')}</div>`:''}</div>`;
+}
+function renderTimeline(){
+  const ach=allAch().filter(a=>a.when);
+  const quarters=[...new Set(ach.map(a=>a.when))].sort();
+  let html='<div class="tl">';
+  quarters.forEach(q=>{ const items=ach.filter(a=>a.when===q);
+    html+=`<div class="tl-group"><div class="tl-q"><span class="dot"></span>${q}</div><div class="tl-items">${items.map(a=>achCard(a)).join('')}</div></div>`; });
+  const planned=plannedPains();
+  if(planned.length) html+=`<div class="tl-group"><div class="tl-q future"><span class="dot"></span>未来 · 计划中（你的投票决定先做哪个）</div><div class="tl-items">${planned.map(p=>plannedCard(p)).join('')}</div></div>`;
+  return html+'</div>';
+}
+function renderScenario(){
+  const scenes=[...new Set(allPains().map(p=>p.场景))];
+  return `<div class="scenes">`+scenes.map(sc=>{
+    const pains=allPains().filter(p=>p.场景===sc), achs=pains.flatMap(p=>p.成果);
+    const items=achs.map(a=>achCard(a,{hideScene:true})).join('')+pains.filter(p=>!p.成果.length).map(p=>plannedCard(p,{hideScene:true})).join('');
+    return `<div class="clay scene"><div class="scene-head"><span class="tag scene">${sc}</span><h3>${pains.length} 个痛点 · ${achs.length} 个成果</h3><span class="cnt">${achs.filter(a=>a.status==='live').length} 已上线</span></div><div class="items">${items}</div></div>`;
+  }).join('')+`</div>`;
+}
+
+const VIEWS=[
+  {k:'value',name:'⊹ 价值视角',hint:'按战略定位 → 痛点展开，痛点按票数排序——最想要的浮到上面。默认的"需求优先"视角。'},
+  {k:'timeline',name:'◷ 时间线视角',hint:'按季度看我们一路做出了什么、现在在做什么、未来计划什么。'},
+  {k:'scenario',name:'⊞ 场景视角',hint:'按你的场景（客服/选品/营销/物流）归类，只看跟你相关的那块。'},
+];
+function metricCells(){
+  const ach=allAch();
+  const live=ach.filter(a=>a.status==='live').length, wip=ach.filter(a=>a.status==='wip').length;
+  const votes=allPains().reduce((s,p)=>s+p.votes,0)+DATA.定位.reduce((s,p)=>s+p.votes,0);
+  const scenes=new Set(allPains().map(p=>p.场景)).size;
+  return [[live,'已上线成果',''],[wip,'进行中',''],[votes,'累计投票','票'],[scenes,'场景覆盖','个']];
+}
+function renderMetrics(){ const h=metricCells().map(c=>`<div class="clay metric"><div class="n">${c[0]}<small>${c[2]}</small></div><div class="k">${c[1]}</div></div>`).join('');
+  const el=$('#home-metrics'); if(el)el.innerHTML=h; }
+function renderTabs(){ $('#viewtabs').innerHTML=VIEWS.map(v=>`<button class="${v.k===view?'on':''}" data-view="${v.k}">${v.name}</button>`).join('');
+  $('#viewhint').textContent=VIEWS.find(v=>v.k===view).hint; }
+function renderView(){ $('#view').innerHTML=view==='timeline'?renderTimeline():view==='scenario'?renderScenario():renderValue(); }
+
+function setPage(p){ page=p;
+  document.querySelectorAll('[data-page-panel]').forEach(el=>el.hidden=el.dataset.pagePanel!==p);
+  document.querySelectorAll('.links button[data-nav]').forEach(b=>b.classList.toggle('on',b.dataset.nav===p));
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+function render(){ renderMetrics(); renderTabs(); renderView(); bind(); }
+
+function bind(){
+  document.querySelectorAll('[data-nav]').forEach(b=>b.onclick=()=>setPage(b.dataset.nav));
+  document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>{view=b.dataset.view;render();});
+  document.querySelectorAll('[data-vote]').forEach(b=>b.onclick=()=>{const id=b.dataset.vote;voted.has(id)?voted.delete(id):voted.add(id);render();});
+  document.querySelectorAll('[data-like]').forEach(b=>b.onclick=()=>{const id=+b.dataset.like;liked.has(id)?liked.delete(id):liked.add(id);render();});
+  document.querySelectorAll('[data-sub]').forEach(b=>b.onclick=()=>{const id=b.dataset.sub;subscribed.has(id)?subscribed.delete(id):subscribed.add(id);render();});
+  document.querySelectorAll('[data-exp]').forEach(b=>b.onclick=()=>{const id=b.dataset.exp;openPains.has(id)?openPains.delete(id):openPains.add(id);render();});
+  document.querySelectorAll('[data-cmt]').forEach(b=>b.onclick=()=>{const x=$('#cbox-'+b.dataset.cmt);if(x)x.classList.toggle('show');});
+  document.querySelectorAll('[data-csubmit]').forEach(b=>b.onclick=()=>{
+    const id=+b.dataset.csubmit, ta=$('#cbox-'+id+' textarea'), v=ta?ta.value.trim():'';
+    if(!v)return;(localComments[id]=localComments[id]||[]).push(v);render();
+    const box=$('#cbox-'+id);if(box)box.classList.add('show');});
+}
+
+render();
+</script>
+</body>
+</html>

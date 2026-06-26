@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Pixel Earth · 三环双色像素地球</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; }
+  /* the page background IS color A — the whole scene uses only A and B */
+  body { background: #f3e9d2; font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+  #stage { display: block; width: 100vw; height: 100vh; }
+  .hud {
+    position: fixed; left: 18px; bottom: 14px; z-index: 5;
+    font-size: 12px; letter-spacing: .04em; color: #6f5f3c; user-select: none;
+  }
+  .hud b { color: #1c3d6e; }
+  .hud kbd {
+    font: inherit; background: rgba(28,61,110,.10); border: 1px solid rgba(28,61,110,.25);
+    border-radius: 4px; padding: 1px 5px; color: #1c3d6e;
+  }
+</style>
+</head>
+<body>
+  <canvas id="stage"></canvas>
+  <div class="hud">
+    <b>pixel earth</b> · 每个像素 = 3 层同心圆 × 2 色 = 8 种字形 · <kbd>Space</kbd> 暂停 · <kbd>S</kbd> 交换 A/B
+  </div>
+
+<script>
+(() => {
+  "use strict";
+
+  // ───────────────────────────────────────────────────────────────────────
+  //  Config — the WHOLE scene is exactly two colors: A and B
+  // ───────────────────────────────────────────────────────────────────────
+  const CFG = {
+    A: "#f3e9d2",          // color A (paper / background / "light")
+    B: "#1c3d6e",          // color B (ink / "dark")
+    res: 46,               // pixels across the globe's diameter
+    globeFrac: 0.66,       // globe diameter as fraction of min(viewport)
+    spin: 0.35,            // radians / second
+    rings: [0.33, 0.66, 1.0], // inner→outer radius as fraction of a pixel's radius
+    gap: 0.92,             // pixel radius vs half-cell (slight gap between pixels)
+    light: [-0.5, 0.55, 0.75], // light direction (x right, y up, z toward viewer)
+    legend: true,
+  };
+
+  const canvas = document.getElementById("stage");
+  const ctx = canvas.getContext("2d");
+  const clamp = (v, lo, hi) => v < lo ? lo : v > hi ? hi : v;
+
+  // ───────────────────────────────────────────────────────────────────────
+  //  The 8 ring-glyphs, sorted by B-coverage (a 2-color, 8-level dither ramp)
+  //  Each entry is [innerB, middleB, outerB]; true → ring painted in B.
+  //  Coverage rises monotonically because outer ring area ≫ middle ≫ inner.
+  // ───────────────────────────────────────────────────────────────────────
+  const RAMP = [
+    [0, 0, 0], // 0   coverage 0.00   all A
+    [1, 0, 0], // 1            0.11   inner B
+    [0, 1, 0], // 2            0.33   middle B
+    [1, 1, 0], // 3            0.44   inner+middle B
+    [0, 0, 1], // 4            0.56   outer B
+    [1, 0, 1], // 5            0.67   inner+outer B
+    [0, 1, 1], // 6            0.89   middle+outer B
+    [1, 1, 1], // 7            1.00   all B
+  ];
+
+  // ───────────────────────────────────────────────────────────────────────
+  //  Coarse equirectangular land mask. '#' = land, ' ' = ocean.
+  //  ~36 cols (lon -180→180) × 18 rows (lat +90→-90). Rough but reads as Earth.
+  // ───────────────────────────────────────────────────────────────────────
+  const MAP = [
+    "                                    ",
+    "      ##                   ###      ",
+    "    ######      ##      #########    ",
+    "    #######    ####   ############  ",
+    "    ######    #####  ############   ",
+    "     #####    #####  ####### ###     ",
+    "      ####     ########  ###         ",
+    "       ###     #######               ",
+    "        ##      #####       ##       ",
+    "        ###     #####      ###       ",
+    "         ###    ####                 ",
+    "          ##    ####         ###     ",
+    "          ##     ##         ####     ",
+    "           #               ##        ",
+    "                                     ",
+    "                                     ",
+    "        #################            ",
+    "      #####################          ",
+  ];
+  const MAP_W = 36, MAP_H = MAP.length;
+
+  function isLand(lonRad, latRad) {
+    // lon -π..π → col 0..MAP_W ; lat +π/2..-π/2 → row 0..MAP_H
+    let lon = lonRad;
+    while (lon < -Math.PI) lon += Math.PI * 2;
+    while (lon >  Math.PI) lon -= Math.PI * 2;
+    const col = Math.floor((lon + Math.PI) / (Math.PI * 2) * MAP_W);
+    const row = Math.floor((Math.PI / 2 - latRad) / Math.PI * MAP_H);
+    const line = MAP[clamp(row, 0, MAP_H - 1)] || "";
+    return line.charAt(clamp(col, 0, MAP_W - 1)) === "#";
+  }
+
+  // normalize light direction once
+  const L = (() => {
+    const [x, y, z] = CFG.light, m = Math.hypot(x, y, z) || 1;
+    return [x / m, y / m, z / m];
+  })();
+
+  // ───────────────────────────────────────────────────────────────────────
+  //  Draw one pixel as 3 concentric circles (outer → inner), each A or B
+  // ───────────────────────────────────────────────────────────────────────
+  function drawGlyph(x, y, pr, glyph) {
+    const [iB, mB, oB] = glyph;
+    const col = b => b ? CFG.B : CFG.A;
+    const disk = (r, c) => { ctx.fillStyle = c; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); };
+    disk(pr * CFG.rings[2], col(oB)); // outer
+    disk(pr * CFG.rings[1], col(mB)); // middle
+    disk(pr * CFG.rings[0], col(iB)); // inner
+  }
+
+  // ───────────────────────────────────────────────────────────────────────
+  //  Globe — sample each grid cell, shade it, pick a glyph
+  // ───────────────────────────────────────────────────────────────────────
+  function drawGlobe(theta, cx, cy, R) {
+    const res = CFG.res;
+    const cell = (2 * R) / res;          // square cell side
+    const pr = cell / 2 * CFG.gap;        // pixel (outer) radius
+    for (let j = 0; j < res; j++) {
+      const ny = -((j + 0.5) / res * 2 - 1);   // screen up = +y
+      for (let i = 0; i < res; i++) {
+        const nx = (i + 0.5) / res * 2 - 1;
+        const d2 = nx * nx + ny * ny;
+        if (d2 > 1) continue;                   // outside the disk → background (A)
+        const nz = Math.sqrt(1 - d2);           // toward viewer
+
+        // surface coords with spin about the vertical axis
+        const lat = Math.asin(clamp(ny, -1, 1));
+        const lon = Math.atan2(nx, nz) + theta;
+
+        // lambert shading on the sphere normal (nx, ny, nz)
+        const shade = clamp(nx * L[0] + ny * L[1] + nz * L[2], 0, 1);
+        const albedo = isLand(lon, lat) ? 0.95 : 0.5;
+        const v = albedo * (0.18 + 0.82 * shade);   // brightness 0..~0.95
+
+        // brighter → less ink (B); map to one of the 8 glyphs
+        const idx = clamp(Math.round((1 - v) * 7), 0, 7);
+        drawGlyph(cx + nx * R, cy - ny * R, pr, RAMP[idx]);
+      }
+    }
+  }
+
+  // legend: the 8 glyphs in order, so all states are visibly present
+  function drawLegend() {
+    if (!CFG.legend) return;
+    const pr = 13, step = pr * 2.6, x0 = 24, y = canvas.clientHeight - 56;
+    ctx.fillStyle = CFG.B;
+    ctx.font = "11px ui-monospace, monospace";
+    for (let k = 0; k < 8; k++) {
+      drawGlyph(x0 + k * step, y, pr, RAMP[k]);
+      ctx.fillStyle = "#8a7a52";
+      ctx.fillText(String(k), x0 + k * step - 3, y + pr + 14);
+    }
+  }
+
+  // ───────────────────────────────────────────────────────────────────────
+  //  Loop + input
+  // ───────────────────────────────────────────────────────────────────────
+  let theta = 0, last = performance.now() / 1000, paused = false;
+
+  function sizeCanvas() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.floor(window.innerWidth * dpr);
+    canvas.height = Math.floor(window.innerHeight * dpr);
+    canvas.style.width = window.innerWidth + "px";
+    canvas.style.height = window.innerHeight + "px";
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  function frame(now) {
+    const t = now / 1000, dt = Math.min(t - last, 0.05); last = t;
+    if (!paused) theta += CFG.spin * dt;
+
+    ctx.fillStyle = CFG.A;
+    ctx.fillRect(0, 0, canvas.clientWidth, canvas.clientHeight);
+
+    const R = Math.min(canvas.clientWidth, canvas.clientHeight) * CFG.globeFrac / 2;
+    drawGlobe(theta, canvas.clientWidth / 2, canvas.clientHeight / 2, R);
+    drawLegend();
+    requestAnimationFrame(frame);
+  }
+
+  window.addEventListener("keydown", e => {
+    if (e.code === "Space") { e.preventDefault(); paused = !paused; }
+    if (e.key === "s" || e.key === "S") { const a = CFG.A; CFG.A = CFG.B; CFG.B = a; }
+  });
+  window.addEventListener("resize", sizeCanvas);
+
+  sizeCanvas();
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
