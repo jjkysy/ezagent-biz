@@ -5,7 +5,7 @@
 
 ## 结论一句话
 
-**可行,且 core/domain 零改动**。v2 按两层落:socialware 层(manifest 重发布)是**纯配置**,升级机器(`publish_or_upgrade` 三态 + 统一晚扫描 + conformance 13)全是平台现成件;板规则引擎(schema 数据模型/求值/新 action/cap 铸造)必须是 **plugin 代码**,但全部自包含在 `apps/ezagent_plugin_kanban` + world kanban 面。发现 1 个平台缺口(per-socialware 默认 schema),不硬绕,已单列。
+**可行,且 core/domain 零改动**。v2 按两层落:socialware 层(manifest 重发布)是**纯配置**,升级机器(`publish_or_upgrade` 三态 + 统一晚扫描 + conformance 13)全是平台现成件;板规则引擎(schema 数据模型/求值/新 action/cap 铸造)必须是 **plugin 代码**,但全部自包含在 `apps/ezagent_plugin_kanban` + world kanban 面。v2 的默认 schema 本身=plugin 内置数据(升级的一部分),零缺口;另记 1 条未来组合场景的增强想法(见 §缺口),v2 无关。
 
 ---
 
@@ -44,6 +44,6 @@
 
 ## D. 平台依赖 / 缺口(不硬绕,单列)
 
-1. **per-socialware 默认 schema 做不到纯配置(缺口)**:板(kanban-manager)是 passive recipe,**刻意不进 Definition roles**(RF-6 passive-join gate 在 materialize 拒它——v1 manifest 头注释明说,`../sw-kanban/.../priv/socialware/kanban/manifest.yaml` shape notes);Definition 没有向"非 role-slot 的 workspace-level actor"下发 config 的通道(`assets` 字段存在但无板侧读路径)。**绕行**:默认 schema 留 recipe `config.stages` 派生(plugin 内 layer-2 数据),per-board 覆盖走 `set_board_schema`。**若要补平台件**(Definition → workspace actor 的 config 通道),走 Allen 立项,v2 不做(spec §8.5)。
+1. **未来增强想法(v2 无关,非缺口)——第三方组合者想在自己 manifest 里带不同默认 schema**:v2 自己的默认规则是 plugin 内置数据(随插件升级交付),不涉及此条。仅当第三方用 kanban plugin 拼别的 socialware(如招聘流程板)想配置层预置不同阶段时才相关:板(kanban-manager)是 passive recipe,**刻意不进 Definition roles**(RF-6 passive-join gate 在 materialize 拒它——v1 manifest 头注释明说,`../sw-kanban/.../priv/socialware/kanban/manifest.yaml` shape notes);Definition 没有向"非 role-slot 的 workspace-level actor"下发 config 的通道(`assets` 字段存在但无板侧读路径)。**绕行**:默认 schema 留 recipe `config.stages` 派生(plugin 内 layer-2 数据),per-board 覆盖走 `set_board_schema`。**若要补平台件**(Definition → workspace actor 的 config 通道),走 Allen 立项,v2 不做(spec §8.5)。
 2. **已装 session 的 Definition 层升级是显式动作(现状,非缺口)**:install freeze-pin 到 revision(`installation.ex:92-118`,"a later publish … does NOT change the behaviors");唯一显式升级路径 `repoint_template_installs`(:212-240),由 orchestrator `migrate_session` 驱动(`orchestrator/tools/migration.ex:13-40`:成员 plan + rule sets + prompt templates + **legends** + repoint + finalize pin)。**对 v2 的含义**:板行为(引擎 + per-board schema)不在 pin 管辖内——plugin 代码一部署全局生效,零破坏靠 default ≡ v1;老 session 只是 legends 行话停旧版,不迁可用,想迁走 `migrate_session`。v2 不加自动迁移。
 3. **#1218-impl 是假设基线(unverified 直到 merge)**:V4 依赖"晚扫描收编 + Demo 薄加载器已删";plan 有前置核实步(Global Constraints + Task 8 Step 0),不成立则停、重排依赖。
