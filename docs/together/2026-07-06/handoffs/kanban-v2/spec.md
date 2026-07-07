@@ -1,80 +1,80 @@
-# kanban v2 — 通用可配置看板 SPEC
+# kanban v2 — 可配置看板 SPEC(修订版:kanban 的升级,不是新 socialware)
 
-> 状态:待 Allen review(§7 discuss-first 先议)。基线:main `e8d9fd11`(worktree sw-kanban-v2,干净分支)。
-> 产品方向(用户 2026-07-06 拍板):session admin 可配置看板规则,像飞书多维表格——有几个阶段/阶段名顺序、每阶段校验规则(准入/推进 gate)、前后链接规则(依赖/父子约束)。
-> 核心设计约束:**socialware 的基本逻辑是所有操作都经 chat 以及 agent 之间的 harness 进行**——"只有 session admin 才能配置看板"不走 world 配置页/表单;权限的真相源必须是 **CapBAC(chokepoint 检查)**,agent 只是交互面。
-
----
-
-## 1. 背景与目标
-
-现在的 kanban(kanban-as-role:role `kanban-manager` × flavor `native` 的 passive agent,board = 该 agent 的 `:kanban` snapshot slice)把两样东西固定死了:
-
-1. **阶段链是 recipe config 里的固定数据**——9 棒产品开发链写在插件的 recipe `config.stages`,**所有板共享同一条链**,session admin 改不了;
-2. **校验规则是 `kanban.ex` 代码**——"根节点必须链首"、"只能父棒或父棒+1"(R1.1 相邻棒推进)、"未认领不能 done" 全是硬编码状态机,换一套规则要改代码发版。
-
-v2 目标:把"这块板有哪几个阶段、什么规则算能推进"变成 **board 级数据(board schema)**,由**板的 admin 经 chat 配置**,校验引擎按 schema 声明式求值。默认 schema = 现 9 棒 + 现规则,**零破坏向后兼容**。
-
-不在 v2 范围:schema 模板库、跨板复制 schema、stage 改名迁移(见 §7 discuss-first)。
+> 状态:待 Allen review(§8 discuss-first 先议)。修订于 2026-07-07,替换 2026-07-06 版(旧版基线 e8d9fd11,漂移清单见同目录 handoff.md)。
+>
+> **规划基线(假设的未来基线,按此写)**:
+> - main `dcabf6174`(含 #1208 hello 标准 substrate / #1209 凭证继承 / #1212 from_role+hop+trace+role-DAG / #1213 ConfigGov 统一+ManifestYaml / #1215 PTY 修复);
+> - **#1190 已 merge**(kanban v1 socialware:`apps/ezagent_plugin_kanban/priv/socialware/kanban/manifest.yaml`,两角色槽 + from_role 硬锁 relay + legends + G1/G4/S5 拍板;实况现读自 worktree `../sw-kanban` @ `46b53e77a`);
+> - **#1218-impl 已 merge**(统一晚扫描:任何 app priv 的 `socialware/*/manifest.yaml` 全 app 启动后被 `ManifestSeed.scan_all!/1` 收编,kanban 的 Demo 薄加载器删除;实况现读自 worktree `../sw-home-impl` 未提交 diff,合并形态以实际落地为准——本 spec 标注了依赖点)。
+>
+> 产品方向(用户 2026-07-06 拍板 + 2026-07-07 修订):**v2 不是新 socialware,是 kanban 的升级**。session/板 admin 可配置看板规则(阶段数/名/序、每阶段准入 gate、父子链接规则),像飞书多维表格;所有操作经 chat 与 agent harness;权限真相源必须是 **CapBAC chokepoint**,agent 只是交互面。
 
 ---
 
-## 2. 现状盘点(全部现读,file:line 基于 main e8d9fd11)
+## 1. v2 = kanban 的升级,按两层拆
 
-### 2.1 阶段链写死在哪
+| 层 | 是什么 | 改哪里 | 破坏面 |
+|---|---|---|---|
+| **plugin 升级(代码,自包含)** | 板引擎从"recipe 固定 stages + `kanban.ex` 硬编码状态机"改成 **schema 驱动**:board `:kanban` slice 存 `tree.schema`(stages[name,order,entry_rules] + link_rules),谓词白名单 fail-closed 求值 | `apps/ezagent_plugin_kanban/**` + world kanban 面(`kanban_actions.ex`/`Kanban.tsx`)+ skill 文档。**不新建 app,不碰 core/domain** | 零:缺省 schema 从现 recipe `config.stages` 派生,行为 ≡ v1(含 G4),存量测试不改断言跑绿 |
+| **socialware 升级(纯配置)** | 同名 `"kanban"` manifest 重发布:content-hash 变 → `publish_or_upgrade` 走 `:upgraded` 铸新 revision(平台现成,零新机制) | `priv/socialware/kanban/manifest.yaml`(legends 行话增补 schema 配置协议) | 零:已装 session freeze-pin 在旧 revision(见 §6.3),新装拿新 revision |
 
-- `apps/ezagent_plugin_kanban/lib/ezagent_plugin_kanban/application.ex:100-102` — `kanban_manager_recipe/0` 的 `config`:
-  ```elixir
-  stages: [:positioning, :metric, :pain, :anchor, :ux, :feature, :issue, :test, :pr],
-  ci_stage: :pr,
-  import_default_stage: :feature
-  ```
-  这是 layer-2 数据(taxonomy §4.1 de-bake 后的正确位置),但它是 **per-recipe 全局**——一个 workspace 里所有 kanban-manager 板共享,不是 per-board。
-- 读回路径:`apps/ezagent_plugin_kanban/lib/ezagent/behavior/kanban/shared.ex:48-53` `Shared.stages/1`(ctx 注入优先,次选 `RecipeRegistry.lookup/1` read-through,`:96-118`);无 recipe 时退 `[]`(无链模式,`:39-40` 注释)。
+不在 v2 范围:schema 模板库、跨板复制、stage 改名迁移、per-socialware 默认 schema(平台缺口,见 §8/feasibility.md)。
 
-### 2.2 校验规则写死在哪(全在 `apps/ezagent_plugin_kanban/lib/ezagent/behavior/kanban.ex`)
+---
 
-| 规则 | 位置 | 内容 |
+## 2. 现状盘点(v1 实况,file:line 基于 `../sw-kanban` @ 46b53e77a;main 侧基于 dcabf6174)
+
+### 2.1 kanban 已是 socialware(#1190 —— 旧 spec 最大的失效前提)
+
+- `apps/ezagent_plugin_kanban/priv/socialware/kanban/manifest.yaml`:name `kanban`,**两个 agent 角色槽**(`kanban-assistant` + `dev-together`,均 cc-headless);`kanban-manager`(板)**刻意不进 roles**——recipe `passive: true`,RF-6 passive-join gate 在 materialize 拒它,板保持 workspace-level URI-dispatch actor(manifest 头注释明说)。
+- routing_rules 只有 relay-back 一条,#1212 硬锁形态:`and(text_contains "__done__", from_role dev-together)` → receiver `kanban-assistant`。
+- legends:`kanban`(member_set + bound_rule_set)+ `collaboration`(协作行话速查,进场即懂)。
+- visibility:`scope: public` + `supervised` + `web_anon_access: false`;owner_policy `installer`。
+- 板的创建与枚举仍在 world 面:`kanban_data.ex:110` `ensure_spawned/1`、`:69-79` `list_by_recipe("kanban-manager")`;创建走 `kanban_actions.ex:281-284` `create_kanban`(caller = 登录者 `current_entity_uri` + `current_caps`)。
+
+### 2.2 阶段链与校验规则写死在哪(v1 行号)
+
+- 阶段链 = recipe config 数据:`application.ex:253-269` `kanban_manager_recipe/0` 的 `config.stages`(9 棒)+ `ci_stage: :pr` + `import_default_stage: :feature`。per-recipe 全局,所有板共享。
+- 读回:`shared.ex:48` `Shared.stages/1`(ctx 注入优先,次选 RecipeRegistry read-through;无 recipe 退 `[]`)。
+- 校验状态机(全在 `apps/ezagent_plugin_kanban/lib/ezagent/behavior/kanban.ex`):
+
+| 规则 | v1 位置 | 内容 |
 |---|---|---|
-| 建根 = admin-only | `kanban.ex:300-302` | `parent_id == nil and not admin?(ctx) → :forbidden` |
-| 根默认链首/子继承父棒 | `kanban.ex:315-318` | `if parent_id, do: nodes[parent_id].stage, else: List.first(stages)` |
-| R1 移动单调 | `kanban.ex:351-354` | 移动后 `node.stage` 必须 ≥ 新父,违规 `{:stage_order_violation, _}` |
-| set_stage 状态机 | `kanban.ex:423-445` | `parse_enum`(棒名必须在链里)+ `stage_fits?` |
-| R1.1 相邻棒推进 | `kanban.ex:453-477` `stage_fits?/4` | 根=链首;非根只能"父棒"或"父棒+1";每个子只能"本棒"或"本棒+1"。**纯代码,不可配** |
-| 状态流转 | `kanban.ex:45` `@settable_status` + `:511-525` | `claimed/doing/done` 三态;`owner==nil → :must_claim_first`(不变式 `owner==nil ⟺ :unassigned`,moduledoc `:31`) |
-| 认领 | `kanban.ex:484-504` | 已认领拒 `:already_claimed` |
+| 建根 = admin-only | `kanban.ex:264-266` | `parent_id == nil and not admin?(ctx) → :forbidden`(v2 不动) |
+| 根默认链首/子继承父棒 | `kanban.ex:281-282` | add_node 的**初始棒**;注意这与移动约束是两回事 |
+| R1 移动单调 | `kanban.ex:296-330` handle_move_node | 移动后 `node.stage` 必须 ≥ 新父,违规 `{:stage_order_violation, _}` |
+| set_stage 状态机 | `kanban.ex:387-409` | `parse_enum`(棒名在链里)+ `stage_fits?` |
+| **R1.1 + G4** | `kanban.ex:419-437` `stage_fits?/4` | **G4 拍板 2026-07-07:根无父约束(parent_ok = true),只受子侧约束**;非根只能"父棒或父棒+1";每个子只能"本棒或本棒+1"。旧 spec 的"根钉死链首"已废 |
+| 状态流转/认领 | `kanban.ex:45` `@settable_status` 等 | claimed/doing/done;`owner==nil → :must_claim_first`(v2 不动) |
 
-错误 shape 被前端和测试消费:`{:stage_order_violation, _}` / `{:invalid_stage, _}`(测试 `test/behavior/kanban_test.exs:229,237,246,250`;前端文案 `apps/ezagent_plugin_world/assets/src/components/Kanban.tsx:576-577`)——v2 **保留这两个错误 shape** 给链接规则违规,新增规则用新 shape。
+- GitHub 主动连接器已删(v1):`sync_github`/`push_pr`/`sync_prs`/`save_github_creds` 四个 action + `github.ex` 全删;`get_tree` 不再返回 `github` 字段;留下的 `register_pr`/`attach_code_file` 是纯数据钉链接。`set_board_config` 委派 `Connectors.set_board_config`(`kanban.ex:643`)。
+- 错误 shape 消费点:测试 `kanban_test.exs`(`{:stage_order_violation,_}`/`{:invalid_stage,_}`)+ 前端文案表 `Kanban.tsx:527-528`。v2 保留这两个 shape 给链接规则,新规则用新 shape。
 
-### 2.3 板数据模型(`:kanban` slice)
+### 2.3 板数据模型(`:kanban` slice,v1 行号)
 
-- 空树:`shared.ex:23` `%{nodes: %{}, root_id: nil, seq: 0, drops: []}`;node shape:`kanban.ex:709-720`(`parent_id/title/order/stage/owner/status/artifacts/metrics`)。
-- 写唯一收口:`shared.ex:149` `Shared.commit/1` = 全 Behavior 唯一 `{:set, :tree, ...}` 字面(arch.scan set_effect_sites 约定)。**v2 的 schema 也必须经这同一个收口**。
-- `drops` 先例:board 级数据(非节点)也放 tree map 里随 commit 走(`kanban.ex:400-417`)——schema 照此存放。
-- 注意 `handle_import_markmap`(`kanban.ex:638-666`)重建 tree 字面量时显式保留 `drops`——**v2 必须同样保留 `schema`**,否则导入清掉板配置。
+- 空树 `shared.ex:23` `%{nodes: %{}, root_id: nil, seq: 0, drops: []}`;写唯一收口 `shared.ex:149` `Shared.commit/1`(全 ActionSet 唯一 `{:set, :tree, ...}` 字面,arch.scan set_effect_sites gate)。**schema 也必须经这同一收口**。
+- `drops` 先例:board 级数据放 tree map 随 commit 走——schema 照此存放。
+- `handle_import_markmap`(`kanban.ex:591`)重建 tree 字面量显式保留 `drops`——v2 必须同样保留 `schema`。
+- 存量节点 `stage` 是 atom(快照 JSON 往返经 `normalize_stages` 转回,`shared.ex:131`);v2 自定义棒名一律 string,比对经 `to_string/1` 归一,无数据迁移。
 
-### 2.4 `set_board_config` 现有可配项
+### 2.4 授权现状(main 侧,v2 CapBAC 面的出发点)
 
-- `kanban.ex:222-228`:args 只有 `github_repo` + `miro_board`(出站连接器配置,存文件 `board_config.ex:1-45`,per-board keyed by URI)。**跟阶段/规则完全无关**——v2 不复用它(职责不同:连接器配置 vs 板规则 schema),新开 `set_board_schema` action。
+- dispatch chokepoint:`Kind.Runtime` 造 needed-cap 时 declared kind `:any` → 宿主 `type_name`(check 11b,`apps/ezagent_core/lib/ezagent/kind/runtime.ex:436-440` + `safe_type_name` :484-492),对 `ctx.caps` first-match,无匹配 `{:error, :unauthorized}`(:360/:389)。
+- 板创建者已有 per-board 权威:`Ezagent.Workspace.grant_creator_manage_cap/4`(`apps/ezagent_domain_workspace/lib/ezagent/workspace.ex:947-983`,经 `{:genesis, creator}`)。
+- 铸 cap 唯一 chokepoint:`Ezagent.Identity.Grant`(#154);`{:held_by, actor}` subsumes self/admin/**#811 manager-delegation**(actor 持 Manage cap over target 即可授,`grant.ex:35,47-50`)。
+- member-cap 统一模型:grant-at-join(`membership.ex:88`)——"资格 = 持 cap"先例,v2 的"板 admin 资格 = 持 schema cap"同型(grant-at-create)。
+- **cap 声明位置(重要纠偏)**:socialware Definition 的 role 槽**没有 caps 字段**(`apps/ezagent_domain_session/lib/ezagent/socialware/definition.ex:35-36`,只有 role_name/fill/recipe/flavor)——agent 的 requested_caps 是 **recipe 数据**(plugin 代码内,`application.ex:173-177` `kanban_action_caps/0` 全量枚举 `Kanban.actions()`,三个 recipe 共用/同构)。所以"新 action 的 caps 排除"落在 plugin 代码,不是 manifest 数据。
 
-### 2.5 授权现状(v2 CapBAC 面的出发点)
+### 2.5 socialware 升级机器(main 侧,#1213/#1218 —— v2 全部直接用,零自建)
 
-- dispatch chokepoint:`Ezagent.Kind.Runtime` 按 `required_caps` 造 needed-cap,declared kind `:any` 替换成目标宿主 type_name(SPEC §7 check 11b,`apps/ezagent_core/lib/ezagent/kind/runtime.ex:436-442`),对 `ctx.caps` first-match 授权(`runtime.ex:515,538-549`),无匹配 → `{:error, :unauthorized}`。
-- kanban 的 per-node 授权在 handler 内(`kanban.ex:283` 注释,`shared.ex:151-163`):`admin?/1` = 持 `%Capability{kind: :any}` wildcard(**全局 admin,非 per-board**);`owner_or_admin?/2` 比对 node.owner。
-- world 面 dispatch 带真人 ctx:`apps/ezagent_plugin_world/lib/ezagent/world/kanban_actions.ex:352-356`(`caller: current_entity_uri, caps: current_caps`)——R3:caller=人类用户,不重写成 agent。
-- **板创建者已经有 per-board 权威**:`Ezagent.Workspace.create_agent` 创建路径给 creator 铸 `Manage :any` cap over 该 instance(`apps/ezagent_domain_workspace/lib/ezagent/workspace.ex:936-947` `grant_creator_manage_cap/4`,经 `{:genesis, creator}` tag `:976-983`)。
-- 铸 cap 唯一 chokepoint:`Ezagent.Identity.Grant`(Decision #154,`apps/ezagent_domain_identity/lib/ezagent/identity/grant.ex:1-77`),closed authorization tags:`{:held_by, actor}`(subsumes self/admin/**#811 manager-delegation**——actor 持 Manage cap over target 即可授,`grant.ex:47-50`)/`{:admin, _}`/`{:rule, name, configurer}`/`{:genesis, _}`。
-- recipe cap 铸给 agent 自身:`Ezagent.Agent.Recipe.CapMint.mint/3`(fail-closed,`apps/ezagent_core/lib/ezagent/agent/recipe/cap_mint.ex:43-59`)——这是 materialize 时铸给**被创建的 agent**,不是给 caller;creator 面的铸造走 `Grant` chokepoint(先例 `workspace.ex:928` `grant_initial_caps` 用 `{:held_by, caller}`)。
-- admin gate 先例(socialware PUBLIC scope):`apps/ezagent_domain_session/lib/ezagent/socialware/config_governance/socialware.ex:197,234` + `definition_registry.ex:462-477` `:public_socialware_requires_admin`——全路径 enforce(#1182)。
-- member-cap 统一模型(#161/#1172-#1178):加入 session 时 grant-at-join(`apps/ezagent_domain_session/lib/ezagent/behavior/session/membership.ex:88` `MemberCap.grant_at_join`,revoke `:876,1016`,grant 经 `Grant.grant_cap_via_router` `:1119,:1223`)——"成员资格 = 持 cap"的先例,v2 的"板 admin 资格 = 持 schema cap"与它同型。
-
-### 2.6 术语澄清:"session admin" 在 kanban 语境是谁
-
-kanban board 是 passive agent(RF-6 三闸:不可 @ / 不可 join / 不收 chat,`application.ex:61-62`),**不在 session 里**,没有 socialware Definition(kanban-as-role,无 Definition/无 `definitions/0`)。所以 prompt 里的 "session admin" 在 v2 落地为**板 admin** = **板创建者(create_agent caller)+ 全局 admin(wildcard cap)**。若未来 kanban 进 socialware(Definition 声明一个 kanban 角色槽),owner_policy `:installer` 派生的 owner 即板 admin——铸造点见 §4.3,模型不变。
+- **publish_or_upgrade 三态**(`apps/ezagent_domain_session/lib/ezagent/config_governance/socialware.ex:118-134`;注意 #1213 后路径在 `config_governance/`,旧 spec 引的 `socialware/config_governance/` 已漂移):同 (name, workspace) 无已发布 → `:published`;content-hash 相同 → `:exists`(不开 CR);**hash 不同 → `publish_new_revision(:upgraded)`**(:136-140,跑完整 open_cr→stage→publish,保 admin 门 + 审计)。
+- **ManifestYaml 四件套**(`socialware/manifest_yaml.ex`):`parse/1` :40 / `render/1` :54 / `import/2` :69 / `export/2` :79。
+- **统一晚扫描(#1218-impl,假设已 merge)**:`ManifestSeed.scan_all!/1` 在**全部 app 启动后**(由最后启动的 `EzagentWeb.Application` 触发)按确定序扫 (1) 部署级目录 `system://socialware`、(2) 每个已启动 app 的 `priv/socialware/*/manifest.yaml`,逐个走 parse → resolve → conformance → `publish_or_upgrade`;坏 manifest fail-loud 停 boot。**plugin 作者体验 = 扔一个 YAML 进 priv,零加载器代码**——kanban 的 `demo.ex` 薄加载器 + `application.ex:56` `maybe_publish_kanban_demo` 在该基线下已删。
+- **conformance 13 断言**(`socialware/conformance.ex:116-132`,#1212 加了 `:routing_role_dag`):v2 改过的 manifest 必须 13/13 绿(`mix ezagent.socialware.check`)。
 
 ---
 
-## 3. v2 数据模型:board schema
+## 3. plugin 升级:board schema 数据模型
 
 ### 3.1 schema shape(存 board `:kanban` slice 的 `tree.schema`)
 
@@ -85,137 +85,153 @@ schema :: %{
 }
 
 stage :: %{
-  name: String.t() | atom(),        # 阶段名。admin 自定义的一律 string(不增长 atom 表);
-                                    # default schema 从 recipe atoms 派生时保留 atom(向后兼容)
-  order: non_neg_integer(),         # 顺序(= 接力顺序;normalize 按此排序后重编号)
-  entry_rules: entry_rules          # 节点【进入该阶段】(set_stage 目标棒)时求值的准入 gate
+  name: String.t() | atom(),        # admin 自定义一律 string(不增长 atom 表);
+                                    # default 从 recipe atoms 派生时保留 atom(兼容)
+  order: non_neg_integer(),         # 顺序(= 接力顺序;normalize 排序后重编号)
+  entry_rules: entry_rules          # 节点进入该阶段(set_stage 目标棒)的准入 gate
 }
 
 entry_rules :: %{
-  optional(:require) => [predicate],              # 全部满足才准入
-  optional(:min_children_done) => non_neg_integer(), # 直接子节点 status==:done 的最少个数
-  optional(:min_artifacts) => non_neg_integer()      # 节点挂载 artifacts 的最少个数
+  optional(:require) => [predicate],                 # 全部满足才准入
+  optional(:min_children_done) => non_neg_integer(), # 直接子节点 status==:done 最少个数
+  optional(:min_artifacts) => non_neg_integer()      # 节点 artifacts 最少个数
 }
 
 predicate :: :owner_claimed | :has_artifact | :has_metric | :status_done  # 封闭白名单
 
 link_rules :: %{
   monotonic: boolean(),             # 父子链单调:子 stage index ≥ 父(v1 R1)
-  max_jump: pos_integer() | nil,    # set_stage 相对父棒最大前进步长(v1 R1.1 = 1);nil 不限
-  root_stage: :first | :any         # 根节点是否锁链首(v1 = :first)
+  max_jump: pos_integer() | nil,    # 相对父棒最大前进步长(v1 R1.1 = 1);nil 不限
+  root_stage: :any | :first         # 根节点 set_stage 约束。**缺省 :any(G4)**;
+                                    # :first = 根钉链首(pre-G4 行为,可选的更严配置)
 }
 ```
 
-**规则 = 声明式谓词白名单**:`require` 只接受白名单里的 4 个谓词;`entry_rules`/`link_rules` 出现白名单外的 key 一律 `{:error, {:invalid_schema, {:unknown_key, k}}}`(fail-closed);**禁任意代码求值**——没有 eval、没有回调、没有用户提供的表达式,组合子就这几个,不够用加白名单(走 review)。
+**规则 = 声明式谓词白名单**:白名单外的 key/谓词一律 `{:error, {:invalid_schema, {:unknown_key|:unknown_predicate, _}}}`(fail-closed);禁任意代码求值——没有 eval、没有回调、没有用户表达式,不够用加白名单走 review。
 
-**默认 schema(零破坏向后兼容)**:`BoardSchema.from_stage_list(stages)` 从 recipe `config.stages` 派生——每棒 `entry_rules: %{}`(空,不加新约束),`link_rules: %{monotonic: true, max_jump: 1, root_stage: :first}`。逐条对照 v1:根=链首(`stage_fits?` `kanban.ex:461`)≡ `root_stage: :first`;"父棒或父棒+1"(`:465`)≡ `monotonic + max_jump: 1`;"子=本棒或本棒+1"(`:468-474`)≡ 同两条对子边求值。**default schema 下引擎行为与 v1 状态机逐字节等价,现有测试套原样跑绿即证明**。
+**默认 schema(零破坏,逐条对照 v1 现行为——含 G4)**:`BoardSchema.from_stage_list(stages)` 从 recipe `config.stages` 派生——每棒 `entry_rules: %{}`,`link_rules: %{monotonic: true, max_jump: 1, root_stage: :any}`:
 
-### 3.2 schema 存哪:per-board slice(推荐)vs Definition/recipe config
-
-| 方案 | 优 | 劣 |
+| v1 行为 | 位置 | schema 等价 |
 |---|---|---|
-| **A. board `:kanban` slice `tree.schema`(推荐)** | 板间独立(通用看板的本意);跟 `drops` 同款 board 级数据先例;经唯一 `commit/1` 收口 + snapshot-on-change 持久,零新存储面;dispatch 读天然带(handler 已读 tree) | 每板要配一遍(由 default 兜底,可接受) |
-| B. recipe `config`(现状位置) | 零迁移 | per-recipe 全局,所有板一条链——正是 v2 要解掉的限制;且 recipe 是 code-seed(`application.ex:88-105`),运行期改要走 ConfigStore recipe override,面更大 |
-| C. socialware Definition config | 装同一 socialware 的板共享默认 | kanban 今天**没有** Definition(kanban-as-role);为此造 Definition 是跨界改动 |
+| 根无父约束、只受子约束(G4) | `stage_fits?` parent nil → true(`kanban.ex:424-426`) | `root_stage: :any` + 子侧 monotonic/max_jump 照常求值(全部子到位根才进得了下一棒) |
+| 非根 = 父棒或父棒+1 | `kanban.ex:428-430` `si == pi or si == pi + 1` | `monotonic: true`(si ≥ pi)∧ `max_jump: 1`(si ≤ pi+1) |
+| 每个子 = 本棒或本棒+1 | `kanban.ex:432-436` | 同两条对子边求值 |
+| 移动后 stage ≥ 新父(R1) | `handle_move_node` :296-330 | `monotonic: true` 对 move 求值 |
+| add_node 根初始棒 = 链首 | `kanban.ex:281-282` | **初始棒规则,不属于 link_rules**——add_node 继续取链首(自定义链取 schema 首棒),与 root_stage 无关 |
 
-**判断:A 为真相源,B 保留为出厂默认**(`tree.schema` 缺省时 `from_stage_list(recipe config.stages)` 派生)。层级 = `tree.schema`(per-board 覆盖)→ recipe `config.stages`(per-recipe 默认)→ `[]`(无链)。C 留给未来 kanban socialware 化时做"per-socialware 默认 schema"(§7 discuss-first)。
+**default schema 下引擎行为与 v1 状态机逐字节等价,现有测试套(含 G4 的"根随子推进"断言,`kanban_test.exs:233-253`)原样跑绿即证明。**
 
-**stage 名类型与迁移**:存量节点 `stage` 是 atom(JSON 快照往返后 `normalize_stages` 转回,`shared.ex:129-139`);admin 自定义棒名是任意字符串,**不做** `String.to_atom`(atom 表安全)。v2 校验引擎所有比对经 `to_string/1` 归一,新写入节点的 stage 存 schema 里的 canonical 名(default 路径 atom、自定义路径 string)。**无需数据迁移**,读侧归一即可;`get_tree` 返回的 `stages` JSON 编码后前端无感知。
+### 3.2 schema 存哪:per-board slice 为真相源(判断不变,论据更新)
 
-### 3.3 板级默认值同步
+| 方案 | 判断 |
+|---|---|
+| **A. board `tree.schema`(真相源,推荐)** | 板间独立;跟 `drops` 同款先例;经唯一 `commit/1` 收口 + snapshot-on-change,零新存储面 |
+| B. recipe `config`(现状) | 保留为出厂默认派生源(缺省 `from_stage_list(config.stages)`);per-recipe 全局正是要解掉的限制 |
+| C. socialware Definition config(per-socialware 默认 schema) | **平台缺口,v2 不做**:板不是 role 槽(RF-6 passive-join gate 拒,manifest 注释明说),Definition 没有向 workspace-level actor 下发 config 的通道;`assets` 字段存在但无板侧读路径。列 §8 discuss-first + feasibility.md"平台依赖" |
 
-`ci_stage` / `import_default_stage`(recipe config 数据)v2 不动(仍 per-recipe);自定义 schema 的板上,`import_default_stage`/`ci_stage` 若不在新链里,现有 fallback 已兜底(`kanban.ex:563` `List.last(stages)` / `:648` `List.first`)。per-board 覆盖它俩 = 后续增量(§7)。
+层级 = `tree.schema`(per-board 覆盖)→ recipe `config.stages` 派生 default → `[]`(无链)。`ci_stage`/`import_default_stage` v2 不动(仍 recipe 级,现有 fallback 兜底)。
 
 ---
 
 ## 4. 配置面:chat + harness → cap-gated action → CapBAC chokepoint 硬门
 
-### 4.1 候选对比
+### 4.1 选型 c(零特权助手翻译 + 发送者 ctx 执行)——对照 #1212 重审后**维持**
 
-| | a. admin-only 配置 agent | b. CapBAC 原生 | **c. a+b 组合(推荐)** |
-|---|---|---|---|
-| 交互面 | 专职 schema-admin agent,chat 说人话 | 无(直接 dispatch) | 复用看板助手,chat 说人话 |
-| 硬门 | ❌ agent 自己判断"你是不是 admin" = **软门**:prompt injection / agent bug 即绕过;且判定逻辑长在 agent 里,与 #161 "资格=持 cap" 模型背离 | ✅ `set_board_schema` 的 cap 只铸给板 admin,chokepoint(`runtime.ex:515`)拒无 cap caller,`{:error, :unauthorized}` | ✅ 同 b,security 全在 cap |
-| 非 admin 体验 | agent 拒绝(可被骗) | 裸错误 | 助手把 `:unauthorized` 讲成人话 |
-| 结论 | **拒**(违反"权在 cap 不在 agent") | 可用但体验差 | **推荐** |
+#1212 给了 `from_role` matcher(`apps/ezagent_core/lib/ezagent/routing/matcher.ex:52,74-76,178`)、hop 预算、routing trace、role receiver 表单。重审结论:
 
-### 4.2 c 方案的关键难点:confused deputy,以及怎么用现有机制闭掉
+- **from_role 不改变选型**:它是"按发送者 role 匹配、把消息投给 role 成员"的路由谓词——投出去之后 receiver(agent)dispatch 用的仍是**自己的** caps(orchestrator tools 先例:ctx 恒带 agent 自己的 caller/caps)。用 routing rule 把 `/kanban schema apply` 转给助手代发 = 助手要持 schema cap = confused deputy 回来。**执行段必须是发送者本人 ctx dispatch,#1212 没有(也不该有)impersonation。**
+- **#1212 让 v2 更顺的地方**:(1) v1 的 relay 硬锁(`and(text_contains "__done__", from_role dev-together)`)已经实证"transport 识别内容触发 + 角色锁"的组合可靠——两段式的翻译段协议(助手回贴命令、admin 本人发出)与之同构;(2) conformance `:routing_role_dag` + receiver 校验兜住 manifest 升级时 routing 面的回归。
+- **软门方案(agent 自判 admin)依旧拒**;纯 CapBAC 无助手依旧体验差。c 维持。
 
-harness 现状:agent 代为 dispatch 时,ctx 带的是 **agent 自己的** caller/caps(orchestrator tools 先例:`apps/ezagent_domain_session/lib/ezagent/orchestrator/tools.ex:33-34` "Every dispatch ctx carries caps: <the orchestrator's delegated caps> and caller: <the orchestrator's URI>")——没有"以指令人身份 dispatch"的 impersonation 机制(设计上也不该有)。所以**如果把 schema cap 授给看板助手,任何成员都能让助手改 schema**(confused deputy),又回到软门。
+### 4.2 两段式闭环(不变,细节按 v1 实况落位)
 
-**闭法(c 的落地形态,两段式)**:
+1. **翻译段(助手,零特权)**:admin 在 session chat 跟 kanban-assistant 说人话("改成 3 阶段:想法/开发/上线,进上线要先认领+挂 1 个产物")。助手按 skill 协议翻译成 schema JSON,dry-run 校验,回贴 schema 全文 + 一条可直接发送的 `/kanban schema apply <board_uri> <json>` 命令。**助手不持 `set_board_schema` cap(§4.3 排除),结构性做不了这件事。**
+2. **执行段(发送者本人 ctx)**:admin 把命令作为 chat 消息发出;world transport 识别前缀,以发送者 `current_entity_uri`/`current_caps` dispatch(与 `kanban_actions.ex:338-339` 现有人类-ctx dispatch 同型)。chokepoint 按发送者 held cap 授权:持 cap 过,否则 `{:error, :unauthorized}`。
 
-1. **翻译段(助手,零特权)**:admin 在 chat 跟看板助手说"把这块板改成 3 个阶段:想法/开发/上线,进上线要先认领并且挂至少 1 个产物"。助手(读过 skill 的 schema 协议)翻译成 schema JSON,dry-run `BoardSchema.normalize/1` 级校验,回贴 schema 全文 + 一条**可直接发送的应用命令**(`/kanban schema apply <board> <json>`)。助手**不持有** `set_board_schema` cap,天然做不了这件事——confused deputy 结构性不存在。
-2. **执行段(发送者本人 ctx)**:admin 把应用命令作为 chat 消息发出;transport 层(world chat 输入,与 `kanban_actions.ex` 同款 socket 面)识别 `/kanban schema` 前缀,**以发送者本人的 `current_entity_uri`/`current_caps`** dispatch `kanban.set_board_schema`(与 `kanban_actions.ex:352-356` 现有人类-ctx dispatch 完全同型)。chokepoint 按发送者 held cap 授权:admin(持 cap)→ 过;非 admin 发一模一样的命令 → `{:error, :unauthorized}`,助手/UI 如实回"你不是这块板的 admin,改不了 schema"。
+真相源自始至终是 CapBAC chokepoint;agent 只做翻译和讲错误。
 
-真相源自始至终是 **CapBAC chokepoint**:agent 只做翻译和讲错误,判定权在 cap。这与 #161 member-cap 统一模型对齐(资格 = 持 cap,`membership.ex:88` grant-at-join 同型 → 本处 grant-at-create)。
+### 4.3 谁持 schema cap、怎么铸(修订:排除面扩大到全部 recipe)
 
-> 备选(记录,不推荐 v2 做):admin 显式 delegate 一个 instance-scoped `set_board_schema` cap 给助手(经 `Grant` chokepoint,`{:held_by, admin}` 授权)。硬门仍在 cap,但助手持权期间任何成员可指使它 → 需要助手侧自律,弱于两段式;若 Allen 想要"admin 一句话全权委托"的体验可作为后续增量。
+- **cap shape**:`%Capability{kind: :agent, behavior: Ezagent.ActionSet.Kanban, action: :set_board_schema, instance: <board_uri>, workspace_uri: <ws>}`(instance-scoped)。
+- **铸造点 = 板创建时(grant-at-create)**:world `create_kanban`(`kanban_actions.ex:281-284`)成功后经 `Grant.grant_cap(creator, cap, {:held_by, creator})`;授权闭环 = creator 已持 create 路径发的 `Manage :any` cap(`workspace.ex:947-983` + `grant.ex:47-50` #811)。全局 admin wildcard 天然过。
+- **requested_caps 排除(v1 实况迫使的修订)**:v1 的 `kanban_action_caps/0`(`application.ex:173-177`)全量枚举 `Kanban.actions()`,被 **kanban-assistant / dev-together / kanban-manager 三个 recipe 共用同构**。若不排除,新 action 一加,**看板助手 materialize 时就经 CapMint 拿到 schema cap → 任何成员可指使助手改 schema,零特权翻译段被打破**。v2 必须把 `:set_board_schema` 从该枚举(及 manager recipe 的同构枚举 `application.ex:258-261`)排除——排除即是两段式安全性的落地代码,不只是纵深防御。
+- 协管:admin/creator 后续经 `Grant` chokepoint 手动授出(机制免费)。
+- **板 admin 是谁(v1 后的说法)**:板创建者(create_kanban caller)+ 全局 admin。kanban socialware 的 owner_policy 是 `installer`,但板不在 install 物化范围内(不是 role 槽),所以 install 时不产生板,也不产生板 cap——铸造点只在 create_kanban。若未来板进 Definition 物化,铸造点迁到 materialize/owner_policy,模型不变(§8)。
 
-### 4.3 谁持 schema cap、怎么铸(CapBAC 可行性论证,全现读)
+### 4.4 非 admin 被拒的体验
 
-- **cap shape**:`%Capability{kind: :agent, behavior: Ezagent.ActionSet.Kanban, action: :set_board_schema, instance: <board_uri>, workspace_uri: <ws>}`(instance-scoped——只管这一块板)。
-- **chokepoint 门怎么起效**:action 宏声明 `caps: [:set_board_schema]`,`required_caps/0` 声明 kind `:any`(与其余 23 个动作一致,`kanban.ex:252-281`);runtime 造 needed-cap 时 kind `:any` → 宿主 type_name `:agent`(check 11b,`runtime.ex:436-442`),instance `:any` → 目标板 URI(`runtime.ex:421-425`);对 `ctx.caps` first-match(`:515`)。持 instance-scoped cap 的 creator 过;全局 admin 的 wildcard(`kind: :any`)过;其他人 `{:error, :unauthorized}`——**handler 里不写任何 admin 判定**。
-- **铸造点 = 板创建时(grant-at-create)**:world `create_kanban`(`kanban_actions.ex:295-330`)`create_agent` 成功后,经 `Ezagent.Identity.Grant.grant_cap(creator, cap, {:held_by, creator})` 给 creator 铸上述 cap。**授权闭环**:creator 此刻已持有 create 路径发的 `Manage :any` cap over 该板(`workspace.ex:936-947`),`{:held_by, creator}` tag 下 chokepoint 的 `holds_manage_over_target?`(#811 manager-delegation,`grant.ex:47-50`)放行——**不需要 genesis、不需要新 authorization tag**。集成测试必须实证这一段(若 create_agent 某路径没发 Manage cap,fallback 讨论见 §7)。
-- **为什么不走 recipe `requested_caps`**:那是 `CapMint` 在 materialize 时铸给**板 agent 自身**的(`cap_mint.ex:43-59`),不是给人;v2 反而要把 `:set_board_schema` **从 requested_caps 排除**(板自己永远不该给自己改规则,least-privilege;passive 三闸下它也不会 dispatch,排除是纵深防御)。
-- **普通成员**:今天成员用板靠被 grant 的 kanban action caps(`mix ezagent.agent.grant_recipe_caps` 等);`set_board_schema` 不进任何批量 grant 集,只有 grant-at-create + 全局 admin + 显式手动 grant(admin 想加协管,经 `Grant` chokepoint 用自己的授权授出——机制免费获得)。
-
-### 4.4 非 admin 被拒的用户体验
-
-- dispatch 返回 `{:error, :unauthorized}`(chokepoint)——结构化,不含敏感信息;
-- 看板助手 skill 协议要求:收到该错误时如实回"这块板的 schema 只有创建者或系统管理员能改",**不尝试代做、不建议绕过**;
-- world UI 错误文案表(`Kanban.tsx:573-580` 先例)加 `unauthorized` / `schema_rule_violation` / `unknown_stages_in_use` 三条人话文案。
+- chokepoint 返回结构化 `{:error, :unauthorized}`;
+- 助手 skill 协议:如实回"这块板的 schema 只有创建者或系统管理员能改",不代做、不建议绕过;
+- `Kanban.tsx:527-528` 文案表加 `unauthorized` / `schema_rule_violation` / `unknown_stages_in_use` 三条。
 
 ---
 
 ## 5. 校验引擎(声明式规则纯函数求值)
 
-新模块 `Ezagent.ActionSet.Kanban.SchemaRules` — **纯函数**(输入 schema + nodes + 动作参数,输出 `:ok`/结构化错误,零副作用、零 ctx 依赖),被 `handle_set_stage` / `handle_move_node` / `handle_add_node` 调:
+新模块 `Ezagent.ActionSet.Kanban.SchemaRules` — 纯函数(输入 schema + nodes + 动作参数,输出 `:ok`/结构化错误,零副作用零 ctx),被 `handle_set_stage`/`handle_move_node`/`handle_add_node` 调:
 
 ```elixir
-check_set_stage(schema, nodes, id, target)  # → {:ok, canonical_name} | {:error, ...}
+check_set_stage(schema, nodes, id, target)   # → {:ok, canonical_name} | {:error, ...}
 check_move(schema, nodes, id, new_parent_id) # → :ok | {:error, {:stage_order_violation, _}}
+first_stage(schema)                          # → name | nil(add_node 根初始棒)
 ```
 
-- **求值顺序**:棒名解析(不在链 → `{:invalid_stage, s}`)→ link_rules(违规 → 保留 v1 的 `{:stage_order_violation, s}` shape,前端/测试兼容)→ entry_rules(违规 → 新 shape)。
-- **结构化错误(哪条规则拒的)**:
-  ```elixir
-  {:error, {:schema_rule_violation,
-    %{stage: "ship", rule: "require:owner_claimed", node: "n3"}}}
-  {:error, {:schema_rule_violation,
-    %{stage: "ship", rule: "min_children_done", need: 2, have: 1, node: "n3"}}}
-  ```
-  rule 字段是稳定字符串(JSON 友好),看板助手 skill 按它讲人话("进'上线'要先认领这张卡")。
-- `set_board_schema` 自身校验:`BoardSchema.normalize/1`(shape/白名单)+ 存量覆盖检查(板上已有节点的 stage 必须都在新链里,否则 `{:error, {:unknown_stages_in_use, [names]}}`——v2 拒绝式,改名/映射见 §7)。
-- default schema 下引擎 ≡ v1 状态机(§3.1 对照表);现有 `kanban_test.exs` 不改断言跑绿是硬验收。
+- 求值顺序:棒名解析(`{:invalid_stage, s}`)→ link_rules(违规保留 v1 shape `{:stage_order_violation, s}`)→ entry_rules(新 shape)。
+- 结构化错误:`{:schema_rule_violation, %{stage: "ship", rule: "require:owner_claimed", node: "n3"}}` / `%{rule: "min_children_done", need: 2, have: 1, ...}`——rule 是稳定字符串,助手按它讲人话。
+- `set_board_schema` 自身校验:`BoardSchema.normalize/1`(shape/白名单)+ 存量覆盖检查(已有节点 stage 必须都在新链里,否则 `{:error, {:unknown_stages_in_use, [names]}}`,拒绝式)。
+- default schema 下引擎 ≡ v1 状态机(§3.1 对照表,含 G4);存量 `kanban_test.exs` 不改断言跑绿是硬验收。
 
 ---
 
-## 6. 与现有资产的兼容
+## 6. socialware 升级(纯配置)
 
-- **kanban relay(`{:role, name}` 路由)**:不动。relay 依赖的 role→URI 解析是 `:member_by_role` edge resolver(session 成员边 role facet),#1185 P2 明确未动;v2 只改 kanban 插件内部,不碰 routing。
-- **看板助手 skill**(task #39 在补 gh 协议节,本 worktree 尚无该文件):v2 新增两节协议——(1) **读 schema 按它推进**:助手先 `get_tree` 拿 `schema`+`stages`,推进建议按板的实际链和 entry_rules 说,不再假设 9 棒;收到 `schema_rule_violation` 按 rule 字段讲人话。(2) **admin 改 schema 的对话协议**:说人话 → schema JSON → 回贴 + `/kanban schema apply` 命令 → 由发送者本人发出(§4.2 两段式);收到 `:unauthorized` 如实回。若 #39 分支已有 SKILL.md,按增量补丁合并(不重扫)。
-- **world/前端**:`get_tree` 已返回 `stages` 投影(`kanban.ex:570-580`),前端列头数据驱动——自定义链自动渲染;新增 `schema` 字段 + 3 条错误文案。`set_board_config`(连接器)不动。
-- **v1 固定链 = default schema**:老板(tree 无 `schema` key)自动落 default,行为不变;`import_markmap` 保留 schema(同 drops 先例)。
-- **CI gate**:`mix ezagent.arch.scan` set_effect_sites——schema 写入走同一个 `Shared.commit/1`,不新增 `{:set` 字面。
+### 6.1 manifest 怎么升级
+
+v2 对 `priv/socialware/kanban/manifest.yaml` 的改动**只有 legends**(纯配置):`legends.collaboration.protocol` 增补 schema 配置行话(板规则谁能改、怎么让助手翻译、apply 命令自己发)。roles / routing_rules / visibility / owner_policy 全不动——`__done__` relay 硬锁是 spec §4.2 契约点(`relay-signal-check.sh` 锁字节一致),红线不碰。
+
+升级链路(全部平台现成):改 YAML → 部署重启 → `ManifestSeed.scan_all!/1` 晚扫描收编 → content-hash 变 → `publish_or_upgrade` `:upgraded` 铸新 revision(`config_governance/socialware.ex:118-134`),完整 CR 审计 + PUBLIC scope admin 门保留。conformance 13/13 是发布门。
+
+### 6.2 新 action 的 caps 与 admin 配置角色——如实归位
+
+- **caps 不是 manifest 数据**:Definition role 槽无 caps 字段(`definition.ex:35-36`),requested_caps 是 recipe 数据(plugin 代码)。v2 的 caps 变化(新 action + 三 recipe 排除)全落 plugin 层(§4.3)。
+- **admin 配置角色:不加**。两段式复用现有 kanban-assistant 当翻译面(skill 文档教协议),不需要新槽。若 Allen 想要专职 schema-admin 槽:复用现有 recipe 是纯 manifest 数据(加一个 roles 条目),新 recipe 则要 plugin 代码——记入 §8。
+
+### 6.3 已装 session 会怎样(现状如实,全现读)
+
+- **install 指 revision,不指名字**:install 时 freeze-pin 到当时的 revision(`config_id` + env 无关 `content_hash` BAKE 进 SessionTemplate/per-session install records,`installation.ex:92-118`,Decision A)——"a later publish of the def does NOT change the behaviors"(:98 注释)。**老 session/老 template 升级后不动,新装拿新 revision。**
+- **唯一显式升级路径** = `repoint_template_installs/4`(`installation.ex:212-240`,"the SOLE explicit upgrade path":丢 pin、重解析到 CURRENT revision),由 orchestrator migration tool 驱动(`orchestrator/tools/migration.ex:13-40` `migrate_session`:成员 plan + rule sets 替换 + prompt templates + **legends 重装** + repoint + finalize pin)。
+- **对 kanban v2 的实际含义(迁移策略)**:板行为(schema 引擎 + per-board schema)是 **plugin 代码 + 板自身数据,不在 Definition pin 的管辖内**——代码一部署,所有板(新老)立即走新引擎,零破坏靠 default ≡ v1 兜底,**老板不需要任何迁移**。Definition pin 管的是 roles/routing/legends:老 session 的 legends 行话停在旧版(没有 schema 配置协议那段),**不迁也能用**(行话是软引导);想要新行话,跑 `migrate_session` 显式迁。v2 不做自动迁移,不加新机制。
 
 ---
 
-## 7. discuss-first 给 Allen(实施前要拍的)
+## 7. 与现有资产的兼容
 
-1. **谓词白名单初始集**:v2 提 `:owner_claimed / :has_artifact / :has_metric / :status_done` + `min_children_done / min_artifacts` + link 三件(`monotonic / max_jump / root_stage`)。够不够第一版?要不要 `min_metrics`/`ci_green`(ci gate 谓词会把 `Ci.check_pr_gate` 拉进纯函数边界,建议后置)?
-2. **schema cap 铸造点**:v2 提 grant-at-create(world `create_kanban` 后 `{:held_by, creator}`,靠 creator Manage cap 授权闭环)。备选:(a) materialize 时(若 kanban 进 socialware,由 `DefinitionAgents` 按 owner_policy 铸——今天没有 Definition,不可用);(b) install 时(同前提);(c) 只手动 grant(admin 跑 mix task——体验差)。**若集成测试发现 create_agent 某路径不给 creator 发 Manage cap**,fallback 用 `{:genesis, creator}`(有 `responsibility_assignments.ex:127` 先例)还是补 Manage 发放?要 Allen 拍。
-3. **chat 执行段的 transport 归属**:`/kanban schema apply` 前缀命令由 world chat 输入面解析(本 spec 推荐,改动落 world kanban 面一处)——这算不算给 transport 加了协议耦合?备选:助手回贴里渲染一个"应用"action 卡片,点击走既有 `kanban_actions` 人类-ctx dispatch(多一次点击,但 world 零新协议)。
-4. **per-workspace / per-socialware schema 模板库**要不要(建板时选模板)?v2 不做,先攒真实自定义 schema 样本。
-5. **stage 改名/映射迁移**:v2 对"新链不覆盖存量 stage"拒绝式处理;要不要 `renames: %{old => new}` 参数一步迁移?
-6. **`ci_stage`/`import_default_stage` per-board 化**:v2 不动(recipe 级),后续增量?
+- **relay(`{:role, name}` 路由 + from_role 硬锁)**:不动。v2 不碰 routing_rules;manifest 升级后 conformance `:routing_receivers_resolve`/`:routing_role_dag` 兜回归。
+- **看板助手 skill(v1 已存在)**:`.claude/skills/kanban-assistant/`(SKILL.md + references/{kanban-team-collaboration,dev-together-relay-overlay,gh-protocol}.md + scripts/{kanban-cli.sh,kanban_dispatch.exs,relay-signal-check.sh})。v2 按**增量合并**加两节:(1) 读 schema 按板的实际链推进(先 `get_tree` 拿 `schema`+`stages`,不假设 9 棒;按结构化错误讲人话);(2) admin 改 schema 两段式协议(翻译→回贴命令→本人发出;`:unauthorized` 如实回)。不重扫。
+- **world/前端**:`get_tree` 已返回 `stages` 投影(列头数据驱动,自定义链自动渲染);v2 加 `schema` 字段 + 3 条错误文案(`Kanban.tsx:527-528` 表)。`set_board_config`(连接器,`Connectors.set_board_config`)不动。
+- **老板(tree 无 schema key)**:运行时 fallback default,行为不变;`import_markmap` 保留 schema(同 drops 先例,测试锁)。
+- **CI gate**:schema 写入走同一 `Shared.commit/1`(`shared.ex:149`),不新增 `{:set` 字面(arch.scan set_effect_sites);`mix ezagent.socialware.check` 13/13。
 
 ---
 
-## 8. 验收标准
+## 8. discuss-first 给 Allen(实施前要拍的)
 
-1. 现有 `apps/ezagent_plugin_kanban/test/**` 全套不改断言跑绿(default schema ≡ v1)。
-2. 单元:`BoardSchema.normalize/1` 白名单 fail-closed(未知 key/谓词必拒);`SchemaRules` 纯函数覆盖每条谓词的过/拒 + 结构化错误 shape。
-3. 集成:非持 cap caller dispatch `kanban.set_board_schema` 被 chokepoint 拒(`:unauthorized`,handler 未执行);creator 与全局 admin 过;板 agent 自身 requested_caps 不含该 cap。
-4. 真浏览器 e2e(截图进 `evidence/kanban-v2/`,每个有意义步骤都截):admin 经 chat 配 3 阶段自定义 schema → 建卡按自定义规则推进 / 被 entry_rule 拒(错误讲人话)→ 非 admin 发同一条 apply 命令被拒。
-5. `mise exec -- mix format --check-formatted` + `mix ezagent.arch.scan` 绿;改动自包含(kanban 插件 + world kanban 面 + Kanban.tsx + skill 文档,不碰 core/domain)。
+1. **谓词白名单初始集**:`owner_claimed / has_artifact / has_metric / status_done` + `min_children_done / min_artifacts` + link 三件(`monotonic / max_jump / root_stage`)。够不够?`ci_green` 谓词(会把 `Ci.check_pr_gate` 拉进纯函数边界)建议后置。
+2. **root_stage 缺省 = `:any`(G4 对齐)**:default schema 必须 ≡ 现行为,G4 后现行为就是根开口。`:first` 保留为可配置的更严选项——要不要反过来把 `:first` 从白名单删掉(YAGNI)?
+3. **schema cap 铸造点**:维持 grant-at-create(world `create_kanban` 后 `{:held_by, creator}`,靠 creator Manage cap 闭环)。若集成测试发现某 create 路径不发 Manage cap → 停,fallback 用 `{:genesis, creator}` 还是补 Manage 发放,Allen 拍。
+4. **chat 执行段 transport 归属**:`/kanban schema apply` 前缀由 world chat 输入面解析(推荐,落 world kanban 面一处)。备选:助手回贴渲染"应用"卡片,点击走既有 `kanban_actions` 人类-ctx dispatch(零新协议,多一次点击)。
+5. **per-socialware 默认 schema(平台缺口)**:Definition → workspace-level 板的 config 下发通道今天不存在(板不进 roles)。要不要立平台件 issue?v2 绕行 = 默认 schema 留 recipe config。
+6. **专职 schema-admin 角色槽**:v2 不加(复用助手做翻译)。若要,复用现有 recipe = 纯 manifest;新 recipe = plugin 代码。
+7. **stage 改名/映射迁移**:v2 拒绝式(`unknown_stages_in_use`);要不要 `renames: %{old => new}` 一步迁?
+8. **老 session legends 迁移**:v2 不自动迁(§6.3);要不要在 world 面给"迁到最新 revision"按钮(walk `migrate_session`)?建议后置。
+
+---
+
+## 9. 验收标准
+
+1. 现有 `apps/ezagent_plugin_kanban/test/**` 全套(v1 形态,含 G4 断言)不改断言跑绿(default schema ≡ v1)。
+2. 单元:`BoardSchema.normalize/1` fail-closed(未知 key/谓词必拒);`SchemaRules` 每条谓词过/拒 + 结构化错误 shape;G4 语义(根无父约束/子侧约束/`:first` 可选更严)。
+3. 集成:非持 cap caller dispatch `kanban.set_board_schema` 被 chokepoint 拒(`:unauthorized`,handler 未执行);creator 与全局 admin 过;**三个 recipe(assistant/dev-together/manager)的 requested_caps 均不含该 action**。
+4. manifest 升级:改后 YAML `ManifestYaml.parse` + conformance 13/13 绿;对同 workspace 先发旧版再发新版,`publish_or_upgrade` 返回 `:upgraded`;`__done__` relay 契约字节不变(`relay-signal-check.sh` 绿)。
+5. 真浏览器 e2e(截图进 `evidence/kanban-v2/`,每个有意义步骤都截):install kanban socialware → 建板 → admin 经 chat 配 3 阶段 schema → 按自定义规则推进/被 entry_rule 拒(人话)→ 非 admin 发同一 apply 命令被拒。
+6. `mix format --check-formatted` + `mix ezagent.arch.scan` + `mix ezagent.socialware.check` 绿;改动自包含(kanban 插件 + world kanban 面 + Kanban.tsx + skill 文档 + manifest.yaml),**core/domain 零改动**。

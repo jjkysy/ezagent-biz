@@ -1,29 +1,29 @@
-# kanban v2(通用可配置看板)Implementation Plan
+# kanban v2(kanban 升级:schema 驱动看板)Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 把看板的阶段链和推进校验规则从"recipe 固定数据 + kanban.ex 硬编码状态机"变成 per-board 可配置的声明式 schema,由板 admin 经 chat 配置,CapBAC chokepoint 做硬门。
+**Goal:** 把看板的阶段链和推进校验规则从"recipe 固定数据 + `kanban.ex` 硬编码状态机"升级成 per-board 可配置的声明式 schema(plugin 代码层),并把 kanban socialware 同名 manifest 重发布成新 revision(纯配置层)。板 admin 经 chat 配置,CapBAC chokepoint 做硬门。
 
-**Architecture:** board schema 存 `:kanban` slice 的 `tree.schema`(经唯一 `Shared.commit/1` 收口);`SchemaRules` 纯函数按声明式谓词白名单求值;`set_board_schema` action 的 instance-scoped cap 在板创建时经 `Ezagent.Identity.Grant` chokepoint(`{:held_by, creator}`)铸给创建者;chat 面两段式(助手零特权翻译 + 发送者本人 ctx 执行)。详见同目录 `spec.md`。
+**Architecture:** board schema 存 `:kanban` slice 的 `tree.schema`(经唯一 `Shared.commit/1` 收口);`SchemaRules` 纯函数按谓词白名单求值,**缺省 schema ≡ v1 现行为(含 G4 根开口)**;`set_board_schema` 的 instance-scoped cap 在板创建时经 `Ezagent.Identity.Grant`(`{:held_by, creator}`)铸给创建者,并从三个 recipe 的 requested_caps 排除;manifest 升级走 `publish_or_upgrade` `:upgraded`(平台现成)。详见同目录 `spec.md`。
 
 **Tech Stack:** Elixir/OTP umbrella(mise OTP27/1.18),ExUnit,Ezagent ActionSet/CapBAC,React(Kanban.tsx),agent-browser 真浏览器 e2e。
 
 ## Global Constraints
 
-- 工作目录 `/home/yaosh/projects/ezagent-biz/.claude/worktrees/sw-kanban-v2`(main `e8d9fd11` 干净分支);所有 mix 命令在 umbrella 根跑,前缀 `mise exec --`,**绝不 `cd` 进 app**。
-- 测试库先起:`docker start ezagent-pg-compat-audit-postgres`(dev web 端口 10042,admin `admin@ezagent.chat`/`worlddev`)。
-- **改动自包含**:只碰 `apps/ezagent_plugin_kanban/**`、`apps/ezagent_plugin_world/lib/ezagent/world/kanban_actions.ex`(+同目录 kanban_data.ex 若需)、`apps/ezagent_plugin_world/assets/src/components/Kanban.tsx`、skill 文档、evidence。**不碰 core/domain**。
-- **向后兼容硬门**:现有 `apps/ezagent_plugin_kanban/test/**` 不改断言跑绿;错误 shape `{:stage_order_violation, _}` / `{:invalid_stage, _}` 保留给链接规则(前端 `Kanban.tsx:576-577` + 测试消费)。
-- 树写入唯一收口:全部经 `Ezagent.ActionSet.Kanban.Shared.commit/1`,**不新增 `{:set` 字面**(`mix ezagent.arch.scan` set_effect_sites gate)。
-- **atom 表安全**:admin 自定义棒名保持 string,禁 `String.to_atom`;谓词名经封闭白名单 map 转 atom。
-- 代码 vs 配置分类:V1-V3 = 代码(机制,layer-1);default schema 派生源 = recipe `config.stages`(layer-2 数据,不动);V4 skill = 文档/协议;V5 = e2e 证据。
-- 迁移标注:存量板 tree 无 `schema` key → 运行时 fallback default schema,**无数据迁移**;存量节点 stage 是 atom,比对经 `to_string/1` 归一。
-- 每片(V1-V5)收口跑 `mise exec -- mix test apps/ezagent_plugin_kanban/test` + `mise exec -- mix format --check-formatted`(CI 等价),绿才进下一片。
-- commit message 落款:`Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`。
+- 工作目录 `/home/yaosh/projects/ezagent-biz/.claude/worktrees/sw-kanban-v2`;所有 mix 命令 umbrella 根跑,前缀 `mise exec --`,**绝不 `cd` 进 app**。测试库先起 `docker start ezagent-pg-compat-audit-postgres`(dev web 10042,admin `admin@ezagent.chat`/`worlddev`)。
+- **前置基线(开工前必核)**:本 plan 假设 **#1190(kanban v1 socialware)与 #1218-impl(统一晚扫描,Demo 薄加载器删除)已 merge 进 main**。开工第一步 rebase 到当时 main 并核实:(a) `apps/ezagent_plugin_kanban/priv/socialware/kanban/manifest.yaml` 存在;(b) `EzagentPluginKanban.Demo` 的 boot publish 段是否已删(`application.ex` 的 `maybe_publish_kanban_demo`)。**任一不成立 → 停,回 spec 重排依赖,不要顺手实现别人的 PR**。本 plan 引用的 kanban 插件行号基于 `../sw-kanban` @ `46b53e77a`,rebase 后以实际为准(函数名/语义不变)。
+- **改动自包含**:只碰 `apps/ezagent_plugin_kanban/**`(含 priv manifest)、`apps/ezagent_plugin_world/lib/ezagent/world/kanban_actions.ex`(+kanban_data.ex 若需)、`apps/ezagent_plugin_world/assets/src/components/Kanban.tsx`、`.claude/skills/kanban-assistant/**`(增量)、evidence。**core/domain 零改动**。
+- **向后兼容硬门**:现有 `apps/ezagent_plugin_kanban/test/**`(v1 形态,含 G4 断言)不改断言跑绿;错误 shape `{:stage_order_violation, _}` / `{:invalid_stage, _}` 保留给链接规则(`Kanban.tsx:527-528` + 测试消费)。
+- 树写入唯一收口 `Shared.commit/1`(`shared.ex:149`),不新增 `{:set` 字面(`mix ezagent.arch.scan` set_effect_sites gate)。
+- **atom 表安全**:自定义棒名保持 string,禁 `String.to_atom`;谓词名经封闭白名单 map 转 atom。
+- 代码 vs 配置:V1-V3 = plugin 代码(机制);default schema 派生源 = recipe `config.stages`(layer-2 数据,不动);V4 = manifest 配置 + skill/文档;V5 = e2e 证据。
+- 迁移:存量板 tree 无 `schema` key → 运行时 fallback default,无数据迁移;存量节点 stage 是 atom,比对经 `to_string/1` 归一;已装 session freeze-pin 语义见 spec §6.3(v2 零新迁移机制)。
+- 每片(V1-V5)收口跑 `mise exec -- mix test apps/ezagent_plugin_kanban/test` + `mise exec -- mix format --check-formatted`,绿才进下一片。
+- commit 落款:`Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`。
 
 ---
 
-## V1 — BoardSchema 数据模型 + default schema 派生(零破坏)
+## V1 — BoardSchema 数据模型 + default 派生(零破坏,G4 对齐)
 
 ### Task 1: `EzagentPluginKanban.BoardSchema`(schema 类型/白名单校验/default 派生)
 
@@ -32,25 +32,25 @@
 - Test: `apps/ezagent_plugin_kanban/test/board_schema_test.exs`
 
 **Interfaces:**
-- Produces: `BoardSchema.from_stage_list([atom|binary]) :: schema`、`BoardSchema.stage_names(schema) :: [atom|binary]`(按 order 排序)、`BoardSchema.normalize(map) :: {:ok, schema} | {:error, {:invalid_schema, reason}}`、`BoardSchema.default_link_rules/0`。schema shape 见 spec §3.1:`%{stages: [%{name, order, entry_rules}], link_rules: %{monotonic, max_jump, root_stage}}`。
+- Produces: `BoardSchema.from_stage_list([atom|binary]) :: schema`、`BoardSchema.stage_names(schema) :: [atom|binary]`(按 order 排序)、`BoardSchema.normalize(map) :: {:ok, schema} | {:error, {:invalid_schema, reason}}`、`BoardSchema.default_link_rules/0`。schema shape 见 spec §3.1。**缺省 link_rules = `%{monotonic: true, max_jump: 1, root_stage: :any}`(G4:根无父约束,只受子约束)。**
 
 - [ ] **Step 1: 写失败测试**
 
 ```elixir
 # apps/ezagent_plugin_kanban/test/board_schema_test.exs
 defmodule EzagentPluginKanban.BoardSchemaTest do
-  @moduledoc "BoardSchema：白名单校验 fail-closed + default 派生(spec §3.1)。"
+  @moduledoc "BoardSchema：白名单校验 fail-closed + default 派生(spec §3.1，G4 对齐)。"
   use ExUnit.Case, async: true
 
   alias EzagentPluginKanban.BoardSchema
 
   describe "from_stage_list/1（default schema 派生）" do
-    test "从 recipe atoms 派生：名字保留 atom、order=列表序、entry_rules 空、link_rules=v1 等价" do
+    test "从 recipe atoms 派生：名字保留 atom、order=列表序、entry_rules 空、link_rules=v1 现行为等价（root_stage :any = G4）" do
       s = BoardSchema.from_stage_list([:positioning, :metric, :pain])
 
       assert BoardSchema.stage_names(s) == [:positioning, :metric, :pain]
       assert Enum.all?(s.stages, &(&1.entry_rules == %{}))
-      assert s.link_rules == %{monotonic: true, max_jump: 1, root_stage: :first}
+      assert s.link_rules == %{monotonic: true, max_jump: 1, root_stage: :any}
     end
 
     test "空链派生空 stages（无链模式）" do
@@ -67,7 +67,7 @@ defmodule EzagentPluginKanban.BoardSchemaTest do
           %{"name" => "idea", "order" => 0, "entry_rules" => %{}},
           %{"name" => "build", "order" => 1, "entry_rules" => %{}}
         ],
-        "link_rules" => %{"monotonic" => true, "max_jump" => 1, "root_stage" => "first"}
+        "link_rules" => %{"monotonic" => true, "max_jump" => 1, "root_stage" => "any"}
       }
 
       assert {:ok, s} = BoardSchema.normalize(raw)
@@ -75,12 +75,20 @@ defmodule EzagentPluginKanban.BoardSchemaTest do
       assert Enum.map(s.stages, & &1.order) == [0, 1, 2]
       ship = Enum.find(s.stages, &(&1.name == "ship"))
       assert ship.entry_rules == %{require: [:owner_claimed], min_artifacts: 1}
-      assert s.link_rules == %{monotonic: true, max_jump: 1, root_stage: :first}
+      assert s.link_rules == %{monotonic: true, max_jump: 1, root_stage: :any}
     end
 
-    test "link_rules 缺省补 v1 等价默认" do
+    test "link_rules 缺省补 v1 现行为默认（root_stage :any）；root_stage 可显式收紧为 :first" do
       assert {:ok, s} = BoardSchema.normalize(%{"stages" => [%{"name" => "a"}]})
-      assert s.link_rules == %{monotonic: true, max_jump: 1, root_stage: :first}
+      assert s.link_rules == %{monotonic: true, max_jump: 1, root_stage: :any}
+
+      assert {:ok, s2} =
+               BoardSchema.normalize(%{
+                 "stages" => [%{"name" => "a"}],
+                 "link_rules" => %{"root_stage" => "first"}
+               })
+
+      assert s2.link_rules.root_stage == :first
     end
 
     test "fail-closed：未知谓词 / entry_rules 未知 key / link_rules 未知 key / 空链 / 重名 / 空名全拒" do
@@ -136,7 +144,8 @@ defmodule EzagentPluginKanban.BoardSchema do
 
   存放：board `:kanban` slice 的 `tree.schema`（跟 `drops` 同款 board 级数据，
   经唯一 `Shared.commit/1` 收口）。缺省时 `from_stage_list(recipe config.stages)`
-  派生 default schema —— 与 v1 固定 9 棒 + R1/R1.1 状态机逐字节等价（向后兼容）。
+  派生 default schema —— 与 v1 现行为逐字节等价（含 G4 根开口：root_stage :any，
+  根无父约束、只受子侧相邻棒约束）。
 
   **规则 = 封闭谓词白名单**：`require` 只认 `@predicate_names` 四个谓词；
   entry_rules/link_rules 出现白名单外 key 一律拒（fail-closed）。禁任意代码求值。
@@ -159,16 +168,17 @@ defmodule EzagentPluginKanban.BoardSchema do
   @entry_rule_keys ~w(require min_children_done min_artifacts)
   @link_rule_keys ~w(monotonic max_jump root_stage)
 
-  @default_link_rules %{monotonic: true, max_jump: 1, root_stage: :first}
+  # G4（拍板 2026-07-07，v1 kanban.ex stage_fits? 根侧已开口）：缺省根无父约束。
+  @default_link_rules %{monotonic: true, max_jump: 1, root_stage: :any}
 
-  @doc "v1 等价的默认 link_rules（monotonic + 相邻棒 + 根锁链首）。"
+  @doc "v1 现行为等价的默认 link_rules（monotonic + 相邻棒 + 根开口 G4）。"
   def default_link_rules, do: @default_link_rules
 
   @doc "谓词白名单（atom 形式）。"
   def predicates, do: Map.values(@predicate_names)
 
   @doc """
-  从棒名列表派生 default schema（entry_rules 全空 + v1 等价 link_rules）。
+  从棒名列表派生 default schema（entry_rules 全空 + v1 现行为等价 link_rules）。
   棒名类型原样保留（recipe atoms → atoms，v1 行为不变）。
   """
   @spec from_stage_list([atom() | String.t()]) :: t()
@@ -310,7 +320,8 @@ defmodule EzagentPluginKanban.BoardSchema do
   defp max_jump(n) when is_integer(n) and n >= 1, do: {:ok, n}
   defp max_jump(_), do: {:error, {:invalid_schema, {:invalid_rule_value, :max_jump}}}
 
-  defp root_stage(nil), do: {:ok, :first}
+  # G4 缺省：根无父约束（v1 现行为）；:first 是显式收紧（pre-G4 行为）。
+  defp root_stage(nil), do: {:ok, :any}
   defp root_stage(v) when v in [:first, "first"], do: {:ok, :first}
   defp root_stage(v) when v in [:any, "any"], do: {:ok, :any}
   defp root_stage(_), do: {:error, {:invalid_schema, {:invalid_rule_value, :root_stage}}}
@@ -345,14 +356,14 @@ end
 - [ ] **Step 4: 跑测试确认通过**
 
 Run: `mise exec -- mix test apps/ezagent_plugin_kanban/test/board_schema_test.exs`
-Expected: PASS(7 tests)
+Expected: PASS(8 tests)
 
 - [ ] **Step 5: format + commit**
 
 ```bash
 mise exec -- mix format
 git add apps/ezagent_plugin_kanban/lib/ezagent_plugin_kanban/board_schema.ex apps/ezagent_plugin_kanban/test/board_schema_test.exs
-git commit -m "feat(kanban): V1 BoardSchema 数据模型——谓词白名单 fail-closed + default 派生
+git commit -m "feat(kanban): V1 BoardSchema 数据模型——谓词白名单 fail-closed + default 派生(G4 对齐 root_stage :any)
 
 Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 ```
@@ -360,7 +371,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 ### Task 2: `Shared.schema/1` 读路径(tree.schema → ctx 注入 → recipe default)
 
 **Files:**
-- Modify: `apps/ezagent_plugin_kanban/lib/ezagent/behavior/kanban/shared.ex`(在 `stages/1` 后加 `schema/1`)
+- Modify: `apps/ezagent_plugin_kanban/lib/ezagent/behavior/kanban/shared.ex`(在 `stages/1`(:48)后加 `schema/1`)
 - Test: `apps/ezagent_plugin_kanban/test/behavior/shared_schema_test.exs`
 
 **Interfaces:**
@@ -385,14 +396,14 @@ defmodule Ezagent.ActionSet.Kanban.SharedSchemaTest do
     {:ok, custom} =
       BoardSchema.normalize(%{
         "stages" => [%{"name" => "idea"}, %{"name" => "ship"}],
-        "link_rules" => %{"max_jump" => "none", "root_stage" => "any"}
+        "link_rules" => %{"max_jump" => "none"}
       })
 
     tree = %{nodes: %{}, root_id: nil, seq: 0, drops: [], schema: custom}
     assert BoardSchema.stage_names(Shared.schema(ctx(tree, %{stages: [:a, :b]}))) == ["idea", "ship"]
   end
 
-  test "tree 无 schema → 从 ctx 注入的 stages 派生 default（v1 等价 link_rules）" do
+  test "tree 无 schema → 从 ctx 注入的 stages 派生 default（v1 现行为 link_rules）" do
     tree = %{nodes: %{}, root_id: nil, seq: 0, drops: []}
     s = Shared.schema(ctx(tree, %{stages: [:a, :b, :c]}))
     assert BoardSchema.stage_names(s) == [:a, :b, :c]
@@ -418,13 +429,11 @@ Expected: FAIL — `Shared.schema/1 is undefined`
 
 - [ ] **Step 3: 实现(shared.ex 追加,`stages/1` 原样不动)**
 
-在 `shared.ex` 的 `stages/1`(`:48-53`)后追加:
-
 ```elixir
   @doc """
   本板的 board schema（kanban v2）。优先级：board `tree.schema`（per-board 覆盖，
   normalize 通过才生效，坏数据 fallback 不炸）→ legacy 棒链源（`ctx[:stages]` 注入 /
-  recipe `config.stages`，即 `stages/1`）派生 default schema（v1 等价）。
+  recipe `config.stages`，即 `stages/1`）派生 default schema（v1 现行为等价）。
   """
   @spec schema(map()) :: EzagentPluginKanban.BoardSchema.t()
   def schema(ctx) do
@@ -444,7 +453,7 @@ Expected: FAIL — `Shared.schema/1 is undefined`
     do: EzagentPluginKanban.BoardSchema.from_stage_list(stages(ctx))
 ```
 
-注意:`tree.schema` 已是 normalize 过的(Task 5 写入时收口),这里再过一遍 normalize 是快照 JSON 往返归一(string 键回 atom 键、谓词回 atom)——同 `normalize_stages`(`shared.ex:129-139`)的既有做法。
+注意:`tree.schema` 写入时已 normalize(Task 5 收口),这里再过一遍是快照 JSON 往返归一(string 键回 atom 键、谓词回 atom)——同 `normalize_stages`(`shared.ex:131`)的既有做法。
 
 - [ ] **Step 4: 跑测试确认通过 + 全套回归**
 
@@ -463,7 +472,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 ---
 
-## V2 — SchemaRules 校验引擎(声明式谓词纯函数求值)
+## V2 — SchemaRules 引擎替换(缺省 ≡ v1 零破坏)
 
 ### Task 3: `SchemaRules` 纯函数引擎
 
@@ -477,14 +486,14 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
   - `SchemaRules.check_set_stage(schema, nodes, id, target) :: {:ok, canonical_name} | {:error, {:invalid_stage, term()}} | {:error, {:stage_order_violation, term()}} | {:error, {:schema_rule_violation, map()}}`
   - `SchemaRules.check_move(schema, nodes, id, new_parent_id) :: :ok | {:error, {:stage_order_violation, term()}}`
   - `SchemaRules.first_stage(schema) :: name | nil`
-  - 错误 shape 约定:链接规则违规 = v1 兼容的 `{:stage_order_violation, target}`;entry_rules 违规 = `{:schema_rule_violation, %{stage: String.t(), rule: String.t(), node: id, ...}}`(rule 是稳定字符串,如 `"require:owner_claimed"`、`"min_children_done"`)。
+  - 错误 shape:链接规则违规 = v1 兼容 `{:stage_order_violation, target}`;entry_rules 违规 = `{:schema_rule_violation, %{stage: String.t(), rule: String.t(), node: id, ...}}`(rule 稳定字符串,如 `"require:owner_claimed"`)。
 
 - [ ] **Step 1: 写失败测试**
 
 ```elixir
 # apps/ezagent_plugin_kanban/test/behavior/schema_rules_test.exs
 defmodule Ezagent.ActionSet.Kanban.SchemaRulesTest do
-  @moduledoc "SchemaRules 纯函数：default schema ≡ v1 状态机 + 自定义 entry/link 规则求值。"
+  @moduledoc "SchemaRules 纯函数：default schema ≡ v1 现状态机(R1.1+G4) + 自定义规则求值。"
   use ExUnit.Case, async: true
 
   alias Ezagent.ActionSet.Kanban.SchemaRules
@@ -500,39 +509,61 @@ defmodule Ezagent.ActionSet.Kanban.SchemaRulesTest do
     )
   end
 
-  # 小树：root(:a) → mid(:a) → leaf(:a)
-  defp tree3 do
-    %{"r" => node(nil, :a), "m" => node("r", :a), "l" => node("m", :a)}
-  end
+  describe "default schema ≡ v1 R1.1+G4" do
+    test "G4 根开口：子未到位根被子侧拒；子到位后根可推进；无子的根可任意跳" do
+      nodes = %{"r" => node(nil, :a), "c" => node("r", :a)}
 
-  describe "default schema ≡ v1 R1.1（相邻棒推进）" do
-    test "根只能链首；非根只能父棒或父棒+1；子约束对称" do
-      nodes = tree3()
-      # 根不能离开链首（v1 kanban.ex:461 等价）
+      # 根想进 :b，子 c 还在 :a → 子侧相邻棒约束拒（不是父侧钉死——G4）
       assert {:error, {:stage_order_violation, _}} =
                SchemaRules.check_set_stage(@default, nodes, "r", "b")
 
-      # 父棒+1 允许
+      # 子先推进到 :b（父棒+1，v1 kanban.ex:428-430 语义）
+      assert {:ok, :b} = SchemaRules.check_set_stage(@default, nodes, "c", "b")
+
+      # 子到位后，根可进 :b（G4：根无父约束）
+      nodes2 = %{nodes | "c" => node("r", :b)}
+      assert {:ok, :b} = SchemaRules.check_set_stage(@default, nodes2, "r", "b")
+
+      # 无子的根可任意跳（v1 stage_fits? parent_ok=true + children 空真）
+      solo = %{"r" => node(nil, :a)}
+      assert {:ok, :d} = SchemaRules.check_set_stage(@default, solo, "r", "d")
+    end
+
+    test "非根只能父棒或父棒+1；不能跳棒；单调不能回退" do
+      nodes = %{"r" => node(nil, :a), "m" => node("r", :a)}
+
       assert {:ok, :b} = SchemaRules.check_set_stage(@default, nodes, "m", "b")
-      # 跳棒拒（父 :a，目标 :c）
+
       assert {:error, {:stage_order_violation, _}} =
                SchemaRules.check_set_stage(@default, nodes, "m", "c")
 
-      # 子约束：m 有子 l(:a)，m 若进 :b 后 l 仍是 :a —— v1 允许"子=本棒或本棒+1"
-      # 反向：m 进 :b 后再想回 :a？单调拒。
       nodes2 = %{nodes | "m" => node("r", :b)}
       assert {:error, {:stage_order_violation, _}} =
                SchemaRules.check_set_stage(@default, nodes2, "m", "a")
     end
 
+    test "root_stage: :first（显式收紧，pre-G4 行为）根被钉链首" do
+      {:ok, s} =
+        BoardSchema.normalize(%{
+          "stages" => [%{"name" => "a"}, %{"name" => "b"}],
+          "link_rules" => %{"root_stage" => "first"}
+        })
+
+      solo = %{"r" => node(nil, "a")}
+      assert {:error, {:stage_order_violation, _}} =
+               SchemaRules.check_set_stage(s, solo, "r", "b")
+    end
+
     test "不在链里的棒名拒 {:invalid_stage, _}" do
+      nodes = %{"r" => node(nil, :a)}
       assert {:error, {:invalid_stage, "nope"}} =
-               SchemaRules.check_set_stage(@default, tree3(), "m", "nope")
+               SchemaRules.check_set_stage(@default, nodes, "r", "nope")
     end
 
     test "atom/string 棒名比对经 to_string 归一（存量 atom 节点 + string 输入）" do
-      assert {:ok, :b} = SchemaRules.check_set_stage(@default, tree3(), "m", "b")
-      assert {:ok, :b} = SchemaRules.check_set_stage(@default, tree3(), "m", :b)
+      nodes = %{"r" => node(nil, :a), "m" => node("r", :a)}
+      assert {:ok, :b} = SchemaRules.check_set_stage(@default, nodes, "m", "b")
+      assert {:ok, :b} = SchemaRules.check_set_stage(@default, nodes, "m", :b)
     end
 
     test "check_move：移动后 node.stage 必须 ≥ 新父（v1 R1）" do
@@ -550,17 +581,14 @@ defmodule Ezagent.ActionSet.Kanban.SchemaRulesTest do
   end
 
   describe "自定义 link_rules" do
-    test "max_jump: nil（不限跳棒）+ root_stage: :any" do
+    test "max_jump: nil（不限跳棒）子可跳两棒（单调仍在）" do
       {:ok, s} =
         BoardSchema.normalize(%{
           "stages" => [%{"name" => "idea"}, %{"name" => "build"}, %{"name" => "ship"}],
-          "link_rules" => %{"max_jump" => "none", "root_stage" => "any"}
+          "link_rules" => %{"max_jump" => "none"}
         })
 
       nodes = %{"r" => node(nil, "idea"), "c" => node("r", "idea")}
-      # 根可任意棒
-      assert {:ok, "ship"} = SchemaRules.check_set_stage(s, nodes, "r", "ship")
-      # 子可跳两棒（单调仍在）
       assert {:ok, "ship"} = SchemaRules.check_set_stage(s, nodes, "c", "ship")
     end
   end
@@ -579,7 +607,7 @@ defmodule Ezagent.ActionSet.Kanban.SchemaRulesTest do
                 "min_children_done" => 1
               }}
           ],
-          "link_rules" => %{"max_jump" => "none", "root_stage" => "any"}
+          "link_rules" => %{"max_jump" => "none"}
         })
 
       {:ok, schema: s}
@@ -640,15 +668,15 @@ defmodule Ezagent.ActionSet.Kanban.SchemaRules do
   `{:schema_rule_violation, %{stage, rule, node, ...}}`，rule 是稳定字符串，
   看板助手按它讲人话）。
 
-  default schema（`BoardSchema.from_stage_list/1`）下与 v1 `stage_fits?` 状态机
-  等价：root_stage :first ≡ 根锁链首；monotonic+max_jump 1 ≡ "父棒或父棒+1"/
-  "子=本棒或本棒+1"。棒名比对一律 `to_string/1` 归一（存量 atom 节点 vs 自定义
-  string 棒名混存安全）。
+  default schema（`BoardSchema.from_stage_list/1`）下与 v1 `stage_fits?`
+  （kanban.ex:419-437，含 G4 根开口）等价：root_stage :any ≡ 根无父约束（只受
+  子侧约束）；monotonic+max_jump 1 ≡ "父棒或父棒+1"/"子=本棒或本棒+1"。
+  棒名比对一律 `to_string/1` 归一（存量 atom 节点 vs 自定义 string 棒名混存安全）。
   """
 
   alias EzagentPluginKanban.BoardSchema
 
-  @doc "链首棒名（空链 nil）。"
+  @doc "链首棒名（空链 nil）。add_node 根节点的初始棒（与 root_stage 移动约束无关）。"
   def first_stage(schema), do: schema |> BoardSchema.stage_names() |> List.first()
 
   @doc "set_stage 全量校验。成功返回 schema 里的 canonical 棒名（原类型）。"
@@ -687,7 +715,7 @@ defmodule Ezagent.ActionSet.Kanban.SchemaRules do
     end
   end
 
-  # 不在链里的存量棒当 0（v1 `stage_index` 同款 fallback，kanban.ex:448）。
+  # 不在链里的存量棒当 0（v1 `stage_index` 同款 fallback，kanban.ex:412）。
   defp idx(names, s) do
     t = to_string(s)
     Enum.find_index(names, &(to_string(&1) == t)) || 0
@@ -699,6 +727,8 @@ defmodule Ezagent.ActionSet.Kanban.SchemaRules do
     parent_ok =
       case node.parent_id do
         nil ->
+          # G4 缺省 :any = 根无父约束（v1 kanban.ex:424-426 现行为）；
+          # :first = 显式收紧（根钉链首）。
           root == :any or si == 0
 
         pid ->
@@ -765,14 +795,14 @@ end
 - [ ] **Step 4: 跑测试确认通过**
 
 Run: `mise exec -- mix test apps/ezagent_plugin_kanban/test/behavior/schema_rules_test.exs`
-Expected: PASS(8 tests)
+Expected: PASS(10 tests)
 
 - [ ] **Step 5: format + commit**
 
 ```bash
 mise exec -- mix format
 git add apps/ezagent_plugin_kanban/lib/ezagent/behavior/kanban/schema_rules.ex apps/ezagent_plugin_kanban/test/behavior/schema_rules_test.exs
-git commit -m "feat(kanban): V2 SchemaRules 声明式校验引擎（纯函数，default ≡ v1 状态机）
+git commit -m "feat(kanban): V2 SchemaRules 声明式校验引擎（纯函数，default ≡ v1 R1.1+G4 状态机）
 
 Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 ```
@@ -780,15 +810,15 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 ### Task 4: `kanban.ex` handlers 换接引擎(存量测试不改断言跑绿 = 兼容证明)
 
 **Files:**
-- Modify: `apps/ezagent_plugin_kanban/lib/ezagent/behavior/kanban.ex`(`handle_set_stage` `:423-445`、`handle_move_node` `:332-361`、`handle_add_node` `:295-325`;删 `stage_index/2` `:448`、`stage_fits?/4` `:453-477`)
-- Test: 存量 `apps/ezagent_plugin_kanban/test/behavior/kanban_test.exs`(不改断言)+ 追加 describe
+- Modify: `apps/ezagent_plugin_kanban/lib/ezagent/behavior/kanban.ex`(v1 行号:`handle_add_node` :259-289 的初始棒 :281-282、`handle_move_node` :296-330、`handle_set_stage` :387-409;删 `stage_index/2` :412、`stage_fits?/4` :419-437)
+- Test: 存量 `apps/ezagent_plugin_kanban/test/behavior/kanban_test.exs`(**不改断言**,含 G4 的"根随子推进"断言 :233-253)+ 追加 describe
 
 **Interfaces:**
-- Consumes: `Shared.schema/1`(Task 2)、`SchemaRules.check_set_stage/4`、`check_move/4`、`first_stage/1`(Task 3)、`BoardSchema.stage_names/1`。
+- Consumes: `Shared.schema/1`(Task 2)、`SchemaRules.check_set_stage/4`、`check_move/4`、`first_stage/1`(Task 3)。
 
-- [ ] **Step 1: 先追加失败测试(自定义 schema 经 ctx 注入生效)**
+- [ ] **Step 1: 先追加失败测试(自定义 schema 经 tree.schema 生效)**
 
-在 `kanban_test.exs` 末尾(最后一个 describe 后)追加:
+在 `kanban_test.exs` 末尾追加:
 
 ```elixir
   describe "v2：per-board schema 驱动校验（tree.schema 覆盖 recipe 链）" do
@@ -848,35 +878,29 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
   end
 ```
 
-注意:`admin_ctx/1` 会 merge `@recipe_config`(含 `stages:` 9 棒)——`Shared.schema/1` 的优先级(tree.schema 先于 ctx 注入)正是本 describe 的被测点。
+注意:`admin_ctx/1` 会 merge recipe config(含 9 棒 stages 注入)——`Shared.schema/1` 的优先级(tree.schema 先于 ctx 注入)正是被测点。helper 名(`admin_ctx`/`committed`/`@second_stage`)以文件现有定义为准,断言语义不变。
 
 - [ ] **Step 2: 跑测试确认失败**
 
 Run: `mise exec -- mix test apps/ezagent_plugin_kanban/test/behavior/kanban_test.exs`
 Expected: 新 3 test FAIL(现 handler 走 ctx 注入的 9 棒,不认 tree.schema),存量绿
 
-- [ ] **Step 3: 换接引擎**
-
-`kanban.ex` 三处改写(其余 handler 不动):
+- [ ] **Step 3: 换接引擎(三处,其余 handler 不动)**
 
 ```elixir
-  # ① handle_add_node：stages 源换成 schema（根默认=链首，子继承父——语义不变）
-  #    把 :315-318 的
-  #        stages = Shared.stages(ctx)
-  #        stage = if parent_id, do: nodes[parent_id].stage, else: List.first(stages)
-  #    换成：
+  # ① handle_add_node（:281-282 初始棒源换 schema——根默认=链首，子继承父，语义不变）：
         stage =
           if parent_id,
             do: nodes[parent_id].stage,
             else: SchemaRules.first_stage(Shared.schema(ctx))
 
-  # ② handle_move_node：R1 检查换 SchemaRules.check_move（:336 的
-  #    `stages = Shared.stages(ctx)` 删掉；:351-354 的 stage_index 比较分支换成）：
+  # ② handle_move_node（:296-330）：R1 检查换 SchemaRules.check_move
+  #   （`stages = Shared.stages(ctx)` 删掉；stage_index 比较分支换成）：
       new_parent_id != nil and
           match?({:error, _}, SchemaRules.check_move(Shared.schema(ctx), nodes, id, new_parent_id)) ->
         {:error, {:stage_order_violation, nodes[id].stage}}
 
-  # ③ handle_set_stage：整个函数体换成
+  # ③ handle_set_stage（:387-409）：整个函数体换成
   @doc false
   def handle_set_stage(%{id: id, stage: stage}, ctx) do
     t = tree(ctx)
@@ -892,12 +916,12 @@ Expected: 新 3 test FAIL(现 handler 走 ctx 注入的 9 棒,不认 tree.schema
   end
 ```
 
-同时:头部 `alias Ezagent.ActionSet.Kanban.SchemaRules`;删掉私有 `stage_index/2`(`:448`)与 `stage_fits?/4`(`:453-477`)(职责已入引擎);`parse_enum` 保留(`set_status` 还在用)。**`handle_import_markmap` 的 `import_default` 与 `handle_get_tree` 的 stages 投影暂不动(Task 5 一并收)。**
+同时:头部 `alias Ezagent.ActionSet.Kanban.SchemaRules`;删私有 `stage_index/2`(:412)与 `stage_fits?/4`(:419-437)(职责入引擎;若 `handle_get_tree`/`ci_summaries` 还引用 `stage_index`,一并迁到 SchemaRules 或保留局部——以编译器为准,不留死代码);`parse_enum` 保留(`set_status` 在用)。`handle_import_markmap` 与 `handle_get_tree` 的适配放 Task 5 一并收。
 
 - [ ] **Step 4: 跑全套确认绿(向后兼容证明)**
 
 Run: `mise exec -- mix test apps/ezagent_plugin_kanban/test`
-Expected: 全 PASS,**存量断言零修改**——default schema ≡ v1 状态机的实证
+Expected: 全 PASS,**存量断言零修改**(含 G4"根随子推进"断言 :233-253)——default schema ≡ v1 现状态机的实证
 
 - [ ] **Step 5: format + commit**
 
@@ -911,14 +935,15 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 ---
 
-## V3 — `set_board_schema` action + CapBAC 铸造与门
+## V3 — admin 配置动作(CapBAC 硬门):action + 铸造 + 排除 + chat 执行面
 
-### Task 5: `set_board_schema` action + handler(含存量覆盖检查、get_tree/import 适配)
+### Task 5: `set_board_schema` action + handler(存量覆盖检查、get_tree/import 适配、requested_caps 三方排除)
 
 **Files:**
-- Modify: `apps/ezagent_plugin_kanban/lib/ezagent/behavior/kanban.ex`(action 宏区 `:222` 后、`required_caps` `:252-281`、`handle_get_tree` `:559-581`、`handle_import_markmap` `:638-666`)
-- Modify: `apps/ezagent_plugin_kanban/lib/ezagent_plugin_kanban/application.ex:93-96`(requested_caps 排除)
-- Test: `kanban_test.exs` 追加 describe
+- Modify: `apps/ezagent_plugin_kanban/lib/ezagent/behavior/kanban.ex`(action 宏区 `set_board_config` :198 后、`required_caps` :220-245、`handle_get_tree` :524-556、`handle_import_markmap` :591-)
+- Modify: `apps/ezagent_plugin_kanban/lib/ezagent_plugin_kanban/application.ex`(`kanban_action_caps/0` :173-177 排除 + `kanban_manager_recipe` :258-261 改用同一枚举)
+- Modify: `apps/ezagent_plugin_kanban/lib/ezagent/behavior/kanban/shared.ex`(`commit/1` :149 防 nil schema 键)
+- Test: `kanban_test.exs` 追加 describe + `kanban_role_test.exs` 若有 requested_caps 数量断言按排除后更新(commit message 注明)
 
 **Interfaces:**
 - Produces: action `kanban.set_board_schema`,args `%{schema: :map}`,returns `%{schema: :map}`;错误 `{:invalid_schema, _}` / `{:unknown_stages_in_use, [String.t()]}`。`get_tree` 返回新增 `schema` 字段;`stages` 投影改从 schema 出。
@@ -928,7 +953,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 ```elixir
   describe "v2：set_board_schema（写板 schema，chokepoint 之外的 handler 语义）" do
     test "合法 schema 写入 tree.schema，经唯一 commit/1；get_tree 返回 schema+新 stages" do
-      {t, %{}} = seeded()  # 复用文件里已有的建树 helper；若名字不同按现有 helper 替换
+      {t, _ids} = seeded()  # 复用文件里已有的建树 helper，名字以现有为准
 
       raw = %{"stages" => [%{"name" => to_string(@first_stage)}, %{"name" => "自定义"}]}
       assert {:ok, %{schema: s}, effects} =
@@ -970,18 +995,19 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
       assert committed(effects).schema == s
     end
 
-    test "板 agent 自身的 requested_caps 不含 set_board_schema（least-privilege）" do
-      actions =
-        for %{action: a} <- EzagentPluginKanban.Application.kanban_manager_recipe()[:requested_caps],
-            do: a
-
-      refute :set_board_schema in actions
-      assert :add_node in actions
+    test "三个 recipe 的 requested_caps 均不含 set_board_schema（两段式安全性落点）" do
+      for recipe <- [
+            EzagentPluginKanban.Application.kanban_manager_recipe(),
+            EzagentPluginKanban.Application.kanban_assistant_recipe(),
+            EzagentPluginKanban.Application.dev_together_recipe()
+          ] do
+        actions = for %{action: a} <- recipe[:requested_caps], do: a
+        refute :set_board_schema in actions
+        assert :add_node in actions
+      end
     end
   end
 ```
-
-(`seeded/0` 用文件里已有的建树 helper——`kanban_test.exs:41-46` 那个返回 `{tree, ids}` 的;实施时按实际函数名替换,断言不变。)
 
 - [ ] **Step 2: 跑测试确认失败**
 
@@ -990,7 +1016,7 @@ Expected: FAIL — `handle_set_board_schema/2 undefined`
 
 - [ ] **Step 3: 实现**
 
-`kanban.ex` — action 宏区(`set_board_config` 后)加:
+`kanban.ex` — action 宏区(`set_board_config` :198 后)加:
 
 ```elixir
   action(:set_board_schema,
@@ -1002,7 +1028,7 @@ Expected: FAIL — `handle_set_board_schema/2 undefined`
   )
 ```
 
-`required_caps` 列表(`:253-278`)追加 `:set_board_schema`。handlers 区加:
+`required_caps`(:220-245 列表)追加 `:set_board_schema`。handlers 区加:
 
 ```elixir
   @doc false
@@ -1021,7 +1047,7 @@ Expected: FAIL — `handle_set_board_schema/2 undefined`
 
   def handle_set_board_schema(_args, _ctx), do: {:error, {:invalid_schema, :not_a_map}}
 
-  # 存量覆盖检查：板上已有节点的 stage 必须都在新链里（v2 拒绝式；改名迁移见 spec §7）。
+  # 存量覆盖检查：板上已有节点的 stage 必须都在新链里（v2 拒绝式；改名迁移见 spec §8）。
   defp stages_cover_existing(schema, nodes) do
     names = schema |> BoardSchema.stage_names() |> Enum.map(&to_string/1) |> MapSet.new()
 
@@ -1036,17 +1062,17 @@ Expected: FAIL — `handle_set_board_schema/2 undefined`
   end
 ```
 
-头部 `alias EzagentPluginKanban.BoardSchema`(已有 BoardConfig alias 旁)。三处适配:
+头部 `alias EzagentPluginKanban.BoardSchema`。三处适配:
 
 ```elixir
-  # handle_get_tree（:559-581）：schema 化。
+  # handle_get_tree（:524-）：stages 投影 schema 化 + 返回 schema 字段。
   #   把 `stages = Shared.stages(ctx)` 换成：
         schema = Shared.schema(ctx)
         stages = BoardSchema.stage_names(schema)
   #   返回 map 加一项：
         schema: schema,
 
-  # handle_import_markmap（:652-660）重建 tree 字面量补 schema 保留（同 drops）：
+  # handle_import_markmap（:591-）重建 tree 字面量补 schema 保留（同 drops）：
                commit(%{
                  nodes: nodes,
                  root_id: root_id,
@@ -1054,8 +1080,8 @@ Expected: FAIL — `handle_set_board_schema/2 undefined`
                  drops: Map.get(tree(ctx), :drops, []),
                  schema: Map.get(tree(ctx), :schema)
                })
-  #   其中 Shared.commit/1 对 nil schema 无感；为防快照落 nil 键，改 Shared.commit/1：
-  #   （shared.ex:149）
+
+  # Shared.commit/1（shared.ex:149）防快照落 nil schema 键：
   def commit(tree) do
     tree
     |> Map.put_new(:drops, [])
@@ -1064,27 +1090,32 @@ Expected: FAIL — `handle_set_board_schema/2 undefined`
   end
 ```
 
-`application.ex:93-96` requested_caps 排除(板自己永远不给自己改规则,least-privilege;passive 三闸下纵深防御):
+`application.ex` 排除(**两段式安全性的落地代码**:不排除,看板助手/开发者 materialize 时经 CapMint 拿到 schema cap,任何成员可指使助手改 schema——confused deputy 回来;板自身排除是 least-privilege 纵深):
 
 ```elixir
-      requested_caps:
-        for action <- Ezagent.ActionSet.Kanban.actions(),
-            action != :set_board_schema do
-          %{behavior: Ezagent.ActionSet.Kanban, action: action}
-        end,
+  # kanban_action_caps/0（:173-177）改为排除 set_board_schema；
+  # kanban_manager_recipe（:258-261）的同构 inline 枚举改调 kanban_action_caps()（去重）。
+  defp kanban_action_caps do
+    for action <- Ezagent.ActionSet.Kanban.actions(),
+        action != :set_board_schema do
+      %{behavior: Ezagent.ActionSet.Kanban, action: action}
+    end
+  end
 ```
+
+(若 `kanban_manager_recipe`/`kanban_assistant_recipe`/`dev_together_recipe` 非 public,测试改由 `Ezagent.Agent.RecipeRegistry.lookup/1` 读注册后的 recipe 断言——语义不变。)
 
 - [ ] **Step 4: 跑全套确认绿**
 
 Run: `mise exec -- mix test apps/ezagent_plugin_kanban/test`
-Expected: 全 PASS(含存量 role 测试——若 `kanban_role_test.exs` 断言 requested_caps 数量,按排除后的数字更新该断言并在 commit message 注明)
+Expected: 全 PASS(`kanban_role_test.exs` 若断言 requested_caps 数量,按排除后的数字更新并在 commit message 注明)
 
 - [ ] **Step 5: format + commit**
 
 ```bash
 mise exec -- mix format
 git add apps/ezagent_plugin_kanban/lib apps/ezagent_plugin_kanban/test
-git commit -m "feat(kanban): V3a set_board_schema action——存量覆盖检查+get_tree/import 适配+requested_caps 排除
+git commit -m "feat(kanban): V3a set_board_schema action——存量覆盖检查+get_tree/import 适配+三 recipe requested_caps 排除
 
 Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 ```
@@ -1093,11 +1124,11 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 **Files:**
 - Create: `apps/ezagent_plugin_kanban/lib/ezagent_plugin_kanban/schema_cap.ex`
-- Modify: `apps/ezagent_plugin_world/lib/ezagent/world/kanban_actions.ex`(`create_kanban` 成功分支 `:320-326`)
-- Test: `apps/ezagent_plugin_kanban/test/e2e/board_schema_cap_test.exs`(集成,仿 `role_native_dispatch_test.exs` 的真 dispatch 手法)
+- Modify: `apps/ezagent_plugin_world/lib/ezagent/world/kanban_actions.ex`(`create_kanban` :281- 成功分支)
+- Test: `apps/ezagent_plugin_kanban/test/e2e/board_schema_cap_test.exs`(集成,仿 `role_native_dispatch_test.exs` 真 dispatch 手法)
 
 **Interfaces:**
-- Consumes: `Ezagent.Identity.Grant.grant_cap/3`(`{:held_by, creator}` tag;授权闭环 = creator 的 Manage cap,`workspace.ex:936-947` + `grant.ex:47-50` #811)、`Ezagent.Capability.normalize!/2`。
+- Consumes: `Ezagent.Identity.Grant.grant_cap/3`(`{:held_by, creator}`;授权闭环 = creator 的 Manage cap,`workspace.ex:947-983` + `grant.ex:47-50` #811)、`Ezagent.Capability.normalize!/2`。
 - Produces: `SchemaCap.grant_to_creator(board_uri, workspace_uri, creator_uri) :: :ok | {:error, term()}`。
 
 - [ ] **Step 1: 写失败集成测试**
@@ -1111,14 +1142,14 @@ defmodule EzagentPluginKanban.BoardSchemaCapTest do
      （授权闭环 = creator 的 Manage cap，#811 manager-delegation）；
   2. creator dispatch set_board_schema 过 chokepoint；
   3. 不持 cap 的普通用户同 dispatch 被 chokepoint 拒 {:error, :unauthorized}（handler 未执行）；
-  4. 板 agent 自身 held caps 不含 set_board_schema（requested_caps 排除）。
+  4. 板 agent 自身 held caps 不含 set_board_schema（requested_caps 排除的运行时证明）。
   """
   use ExUnit.Case, async: false
 
-  # 本测试 setup 仿 apps/ezagent_plugin_kanban/test/e2e/role_native_dispatch_test.exs：
+  # setup 仿 apps/ezagent_plugin_kanban/test/e2e/role_native_dispatch_test.exs：
   # 同款 workspace 夹具 + Ezagent.Workspace.create_agent(flavor "native", role
-  # "kanban-manager") + Ezagent.Invocation.dispatch。实施时复制该文件的 setup 块
-  # （creator = 夹具 user URI + 其真实 held caps；normal_user = 新建的第二个 user，
+  # "kanban-manager") + Ezagent.Invocation.dispatch。实施时复制该文件 setup 块
+  # （creator = 夹具 user URI + 其真实 held caps；normal_user = 第二个 user，
   # grant 基础 kanban caps 但不 grant set_board_schema）。
 
   @schema %{"stages" => [%{"name" => "idea"}, %{"name" => "build"}, %{"name" => "ship"}]}
@@ -1133,25 +1164,21 @@ defmodule EzagentPluginKanban.BoardSchemaCapTest do
 
   test "creator 铸 cap 后过门；无 cap 用户被 chokepoint 拒；板自身无该 cap",
        %{board_uri: board, workspace_uri: ws, creator: creator, normal_user: user} = _ctx do
-    # 1. 铸造（{:held_by, creator}——creator 的 Manage cap 授权）
     assert :ok = EzagentPluginKanban.SchemaCap.grant_to_creator(board, ws, creator.uri)
 
-    # 2. creator 过门
     creator_caps = Ezagent.Identity.list_caps_for(creator.uri) |> MapSet.new()
     assert {:ok, %{schema: _}} = set_schema(board, creator.uri, creator_caps)
 
-    # 3. 普通用户被 chokepoint 拒（结构化 :unauthorized，非 handler 的 :forbidden）
     user_caps = Ezagent.Identity.list_caps_for(user.uri) |> MapSet.new()
     assert {:error, :unauthorized} = set_schema(board, user.uri, user_caps)
 
-    # 4. 板 agent 自身 held caps 无 set_board_schema（requested_caps 排除的运行时证明）
     board_caps = Ezagent.Identity.list_caps_for(board)
     refute Enum.any?(board_caps, &(Ezagent.Capability.action_of(&1) == :set_board_schema))
   end
 end
 ```
 
-(setup 夹具、`list_caps_for`/`action_of` 的确切 API 以 `role_native_dispatch_test.exs` 现有用法为准——该文件已在真 DB 上跑同款 create+dispatch;断言语义不变。)
+(夹具与 `list_caps_for`/`action_of` 确切 API 以 `role_native_dispatch_test.exs` 现有用法为准——该文件已在真 DB 跑同款 create+dispatch;断言语义不变。)
 
 - [ ] **Step 2: 跑测试确认失败**
 
@@ -1172,8 +1199,9 @@ defmodule EzagentPluginKanban.SchemaCap do
   - 协管：admin/creator 后续经 `Ezagent.Identity.Grant` 手动授（机制免费获得）。
 
   授权闭环（不需要 genesis、不引新 tag）：create_agent 路径已给 creator 铸
-  `Manage :any` cap over 该板（`Ezagent.Workspace.grant_creator_manage_cap/4`），
-  `{:held_by, creator}` tag 下 Grant chokepoint 的 manager-delegation（#811）放行。
+  `Manage :any` cap over 该板（`Ezagent.Workspace.grant_creator_manage_cap/4`，
+  workspace.ex:947），`{:held_by, creator}` tag 下 Grant chokepoint 的
+  manager-delegation（#811，grant.ex:47-50）放行。
   真相源 = CapBAC chokepoint；kanban handler 不自判 admin。
   """
 
@@ -1206,7 +1234,7 @@ defmodule EzagentPluginKanban.SchemaCap do
 end
 ```
 
-- [ ] **Step 4: world 接线(`kanban_actions.ex` create 成功分支 `:320-326`)**
+- [ ] **Step 4: world 接线(`kanban_actions.ex` `create_kanban` :281- 成功分支)**
 
 ```elixir
           {:ok, %{agent_uri: agent_uri}} ->
@@ -1226,12 +1254,12 @@ end
             end
 ```
 
-(world 已依赖 kanban 插件的先例:本文件本就是 kanban 的 world 面;若 `mix.exs` dep 缺 `:ezagent_plugin_kanban` 则按 `KanbanData` 的既有依赖方式补——现读确认,通常已有。)
+(成功分支的确切 socket 处理以 create_kanban 现有代码为准,只插入 grant 一层;world 依赖 kanban 插件是本文件既有形态。)
 
 - [ ] **Step 5: 跑集成测试 + 全套确认绿**
 
 Run: `mise exec -- mix test apps/ezagent_plugin_kanban/test && mise exec -- mix test apps/ezagent_plugin_world/test`
-Expected: 全 PASS。**若 Step 1 测试暴露 create_agent 路径没给 creator 发 Manage cap(grant 被拒 `:unauthorized`)→ 停,按 spec §7.2 找 Allen 拍 fallback(`{:genesis, creator}` 有 `responsibility_assignments.ex:127` 先例),不要自作主张换 tag。**
+Expected: 全 PASS。**若 Step 1 暴露 create_agent 某路径不给 creator 发 Manage cap(grant 被拒 `:unauthorized`)→ 停,按 spec §8.3 找 Allen 拍 fallback(`{:genesis, creator}` 有先例),不要自作主张换 tag。**
 
 - [ ] **Step 6: format + commit**
 
@@ -1243,21 +1271,17 @@ git commit -m "feat(kanban): V3b SchemaCap grant-at-create + chokepoint 硬门�
 Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 ```
 
----
-
-## V4 — 看板助手 skill(读 schema 推进 + admin 对话改 schema 协议)+ chat 执行面
-
-### Task 7: skill 协议节 + `/kanban schema apply` 发送者-ctx 命令面 + 前端错误文案
+### Task 7: chat 执行面(`/kanban schema apply` 发送者-ctx)+ skill 增量两节 + 前端文案
 
 **Files:**
-- Create: `apps/ezagent_plugin_kanban/skills/kanban-assistant/SKILL.md`(若 task#39 分支已有同名 skill,把下述两节按**增量补丁**合并进去,不重扫)
-- Modify: `apps/ezagent_plugin_world/lib/ezagent/world/kanban_actions.ex`(加 `handle_dispatch` 子句)
-- Modify: `apps/ezagent_plugin_world/assets/src/components/Kanban.tsx:573-580`(错误文案表)
+- Modify: `apps/ezagent_plugin_world/lib/ezagent/world/kanban_actions.ex`(加 `handle_dispatch` 子句 + `parse_schema_command/1`)
+- Modify: `.claude/skills/kanban-assistant/SKILL.md` + `references/kanban-team-collaboration.md`(**增量合并两节,不重扫**——v1 已带 SKILL.md/references/scripts,见 spec §7)
+- Modify: `apps/ezagent_plugin_world/assets/src/components/Kanban.tsx:527-528`(错误文案表加三条)
 - Test: `apps/ezagent_plugin_world/test/world/kanban_schema_command_test.exs`(命令解析纯函数)
 
 **Interfaces:**
-- Consumes: Task 5 的 `kanban.set_board_schema` dispatch、Task 3 的错误 shape。
-- Produces: world 事件 `"kanban.set_board_schema"`(args `%{"kanban_uri" => u, "schema" => map}`,经既有 `act/4` 以发送者 ctx dispatch)+ `KanbanActions.parse_schema_command/1`(chat 消息 `/kanban schema apply <uri> <json>` → `{:ok, uri, map} | :not_command | {:error, :bad_json}`)。
+- Consumes: Task 5 的 `kanban.set_board_schema` dispatch、Task 3 错误 shape。
+- Produces: world 事件 `"kanban.set_board_schema"`(args `%{"kanban_uri" => u, "schema" => map}`,经既有 `act/4` 以发送者 ctx dispatch)+ `KanbanActions.parse_schema_command/1`。
 
 - [ ] **Step 1: 写失败测试(命令解析纯函数)**
 
@@ -1296,7 +1320,7 @@ Expected: FAIL — `parse_schema_command/1 undefined`
 
 - [ ] **Step 3: 实现(kanban_actions.ex)**
 
-`handle_dispatch` 子句区(`set_board_config` 子句旁)加:
+`handle_dispatch` 子句区加:
 
 ```elixir
   # v2：写板 schema。经既有 act/4 以【发送者本人】ctx dispatch —— CapBAC chokepoint
@@ -1307,13 +1331,13 @@ Expected: FAIL — `parse_schema_command/1 undefined`
       do: act(socket, u, :set_board_schema, %{schema: s})
 ```
 
-模块底部 helpers 区加:
+helpers 区加:
 
 ```elixir
   @doc """
   chat 执行段命令解析（纯函数）：`/kanban schema apply <board_uri> <json>`。
   返回 `{:ok, uri_str, schema_map}` / `:not_command` / `{:error, :bad_json}`。
-  由 world chat 输入面在发消息前调——命中则改走 `handle_dispatch("kanban.set_board_schema", ...)`
+  由 world chat 输入面在发消息前调——命中改走 `handle_dispatch("kanban.set_board_schema", ...)`
   （发送者本人 ctx），不命中原样走聊天。
   """
   @spec parse_schema_command(String.t()) ::
@@ -1334,9 +1358,9 @@ Expected: FAIL — `parse_schema_command/1 undefined`
   def parse_schema_command(_), do: :not_command
 ```
 
-chat 输入面的接线(world chat 输入 handler 调 `parse_schema_command`,命中转 `KanbanActions.handle_dispatch`):落点在 world 聊天输入的 socket handler——实施时现读 `ConversationActions` 的消息发送入口,只加"前缀命中改道"三行;**若该接线越出 kanban 面(要动 ConversationActions 本体),按 spec §7.3 备选降级:助手回贴渲染"应用"卡片,前端按钮直接 `pushEvent("kanban.set_board_schema", ...)`(纯 Kanban.tsx/前端,零 transport 改动),并在 PR 里注明选了哪条。**
+chat 输入面接线:world 聊天输入 handler 调 `parse_schema_command`,命中转 `KanbanActions.handle_dispatch`(只加"前缀命中改道"三行,落点现读 `ConversationActions` 消息发送入口)。**若接线越出 kanban 面(要动 ConversationActions 本体),按 spec §8.4 备选降级:助手回贴渲染"应用"卡片,前端按钮 `pushEvent("kanban.set_board_schema", ...)`(纯 Kanban.tsx,零 transport 改动),PR 里注明选了哪条。**
 
-- [ ] **Step 4: Kanban.tsx 错误文案(`:573-580` 文案表加三条)**
+- [ ] **Step 4: Kanban.tsx 错误文案(:527-528 文案表加三条)**
 
 ```tsx
   schema_rule_violation: "推进被本板规则拦下：目标阶段的准入条件未满足（认领/产物/子任务完成数）",
@@ -1344,13 +1368,9 @@ chat 输入面的接线(world chat 输入 handler 调 `parse_schema_command`,命
   unauthorized: "这块板的 schema 只有创建者或系统管理员能改",
 ```
 
-- [ ] **Step 5: 写 skill 协议(SKILL.md 两节)**
+- [ ] **Step 5: skill 增量两节(`.claude/skills/kanban-assistant/`,保留原有节)**
 
 ```markdown
-# 看板助手（kanban-assistant）
-
-（…若 #39 分支已有本 skill，保留其原有节，只增量合并以下两节…）
-
 ## 读 schema、按板的实际规则推进（v2）
 
 - 任何推进建议前，先 `kanban.get_tree` 拿本板 `schema` + `stages`——**不要假设 9 棒**；
@@ -1368,9 +1388,9 @@ chat 输入面的接线(world chat 输入 handler 调 `parse_schema_command`,命
    + min_children_done / min_artifacts + link_rules{monotonic,max_jump,root_stage}）。
 2. 回贴：schema JSON 全文 + 影响说明（几个阶段、哪些棒有准入 gate）+ 一条**可直接发送**的
    应用命令：`/kanban schema apply <board_uri> <json单行>`。
-3. **助手绝不代发**：命令必须由用户本人发出（执行走发送者本人的 cap，CapBAC chokepoint
-   是唯一的门）。收到 `:unauthorized` 如实回「这块板的 schema 只有创建者或系统管理员能改」，
-   **不尝试代做、不建议绕过**。
+3. **助手绝不代发**：你不持有 `set_board_schema` 的 cap（recipe 排除），命令必须由用户
+   本人发出（执行走发送者本人的 cap，CapBAC chokepoint 是唯一的门）。收到 `:unauthorized`
+   如实回「这块板的 schema 只有创建者或系统管理员能改」，**不尝试代做、不建议绕过**。
 4. 收到 `{:unknown_stages_in_use, [..]}` → 提示先把列出阶段上的卡移走，再重发命令。
 ```
 
@@ -1380,8 +1400,111 @@ Run: `mise exec -- mix test apps/ezagent_plugin_world/test/world/kanban_schema_c
 Expected: PASS
 
 ```bash
-git add apps/ezagent_plugin_world apps/ezagent_plugin_kanban/skills
-git commit -m "feat(kanban): V4 看板助手 schema 协议 + /kanban schema apply 发送者-ctx 命令面 + 错误文案
+git add apps/ezagent_plugin_world .claude/skills/kanban-assistant
+git commit -m "feat(kanban): V3c /kanban schema apply 发送者-ctx 命令面 + 助手 skill schema 协议两节 + 错误文案
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
+```
+
+---
+
+## V4 — socialware 升级(manifest 重发布 :upgraded)+ 已装语义验证
+
+### Task 8: manifest legends 增补 + `publish_or_upgrade` `:upgraded` 实证 + relay 契约不回归
+
+**Files:**
+- Modify: `apps/ezagent_plugin_kanban/priv/socialware/kanban/manifest.yaml`(**只改 legends**,roles/routing_rules/visibility/owner_policy 不动——`__done__` relay 硬锁红线)
+- Test: `apps/ezagent_plugin_kanban/test/manifest_upgrade_test.exs`(新)+ 存量 manifest/demo 测试不改断言
+- Run: `.claude/skills/kanban-assistant/scripts/relay-signal-check.sh`
+
+**Interfaces:**
+- Consumes: `Ezagent.Socialware.ManifestYaml.parse/1`(:40)、`ManifestResolver.resolve/1`、`Conformance.check_candidate/2`、`Ezagent.ConfigGovernance.Socialware.publish_or_upgrade/2`(config_governance/socialware.ex:118-134)。**零新机制**——全走 #1213/#1218 平台件。
+
+- [ ] **Step 0: 前置核实(#1218-impl 合并形态)**
+
+现读合并后的 `Ezagent.Socialware.ManifestSeed`(统一晚扫描)与 kanban 侧残留:确认 kanban priv manifest 已被晚扫描收编、`Demo` 薄加载器已删(或残留哪些纯函数 seam,如 `manifest_attrs/1` 测试夹具)。**存量 manifest 相关测试(v1 的 demo_test/demo_publish_test 合并后形态)不改断言**;本 Task 的新测试以合并后夹具写法为准。
+
+- [ ] **Step 1: 写失败测试(升级往返)**
+
+```elixir
+# apps/ezagent_plugin_kanban/test/manifest_upgrade_test.exs
+defmodule EzagentPluginKanban.ManifestUpgradeTest do
+  @moduledoc """
+  v2 socialware 升级实证（纯配置层，spec §6）：
+  1. 改后的 manifest.yaml parse → resolve → conformance 13/13 绿；
+  2. legends.collaboration 含 schema 配置行话（v2 增补的判据字符串）；
+  3. 对同 workspace 先发旧 body 再发新 body，publish_or_upgrade 返回 :upgraded
+     （content-hash 判定，config_governance/socialware.ex:118-134）；重发新 body → :exists；
+  4. routing_rules 原样（and(text_contains "__done__", from_role dev-together)）——relay 红线不动。
+  """
+  use ExUnit.Case, async: false
+
+  # setup/夹具（admin ctx + workspace）仿合并后的 kanban manifest 发布测试
+  # （v1 的 demo_publish_test.exs 形态）；publish 链路本身是平台件，不在此重测细节。
+
+  test "manifest 升级：conformance 13/13 + :upgraded/:exists 三态 + relay 契约不动" do
+    yaml = File.read!(manifest_path())
+    assert {:ok, attrs} = Ezagent.Socialware.ManifestYaml.parse(yaml)
+
+    # 2. v2 行话判据（与 Step 3 的 YAML 增补字面一致）
+    assert attrs |> get_in([:legends, "collaboration", :protocol]) =~ "板规则（schema）"
+
+    # 4. relay 红线
+    [rule] = attrs.routing_rules
+    assert rule.matcher["type"] == "and"
+    assert Enum.any?(rule.matcher["items"], &(&1["arg"] == "__done__"))
+    assert Enum.any?(rule.matcher["items"], &(&1["arg"] == "dev-together"))
+
+    # 1+3. resolve + conformance + 升级三态（admin ctx 夹具）
+    assert {:ok, definition} = Ezagent.Socialware.ManifestResolver.resolve(attrs)
+    assert :ok = Ezagent.Socialware.Conformance.check_candidate(definition, ws())
+
+    old = %{definition | legends: Map.delete(definition.legends, "collaboration")}
+    assert {:ok, :published} = Governance.publish_or_upgrade(old, admin_ctx())
+    assert {:ok, :upgraded} = Governance.publish_or_upgrade(definition, admin_ctx())
+    assert {:ok, :exists} = Governance.publish_or_upgrade(definition, admin_ctx())
+  end
+end
+```
+
+(`manifest_path/ws/admin_ctx/Governance` alias 以合并后既有 manifest 测试的夹具为准;断言语义不变——`:published→:upgraded→:exists` 三态与 legends 判据是本测试的不可变部分。)
+
+- [ ] **Step 2: 跑测试确认失败**
+
+Run: `mise exec -- mix test apps/ezagent_plugin_kanban/test/manifest_upgrade_test.exs`
+Expected: FAIL — legends 判据不匹配(YAML 还没增补)
+
+- [ ] **Step 3: 改 manifest.yaml(只 legends)**
+
+`legends.collaboration.protocol` 末尾增补(保持既有行话原文不动):
+
+```yaml
+      板规则（schema）：这块板的阶段链和推进规则可以按板配置——想改的话跟看板助手说人话，
+      它会翻译成 schema JSON 并回贴一条 /kanban schema apply 命令；命令要由你自己发出，
+      只有板创建者或系统管理员发才会生效（权限在 CapBAC，助手代发无效）。
+```
+
+同时更新 YAML 头注释(shape notes 加第四条:legends 含 v2 schema 配置行话;版本注记)。**不改 name/version 语义键之外的行为键;content-hash 因 legends 变化自然改变 → 晚扫描重发布走 `:upgraded`。**
+
+- [ ] **Step 4: 跑测试 + relay 契约检查 + 存量全绿**
+
+```bash
+mise exec -- mix test apps/ezagent_plugin_kanban/test
+bash .claude/skills/kanban-assistant/scripts/relay-signal-check.sh
+mise exec -- mix ezagent.socialware.check
+```
+Expected: 全 PASS;relay-signal-check 绿(`__done__` 四处字节一致);conformance 13/13。
+
+- [ ] **Step 5: 已装语义说明(文档,不写迁移代码)**
+
+spec §6.3 的现状(freeze-pin/`repoint_template_installs` 唯一显式升级/`migrate_session` 工具)写进 PR 描述"已装 session 会怎样"一节;**v2 零新迁移机制**——板行为不在 Definition pin 管辖内(plugin 代码 + per-board 数据),老 session 的旧 legends 行话不迁也能用。
+
+- [ ] **Step 6: format + commit**
+
+```bash
+mise exec -- mix format
+git add apps/ezagent_plugin_kanban/priv apps/ezagent_plugin_kanban/test/manifest_upgrade_test.exs
+git commit -m "feat(kanban): V4 socialware 升级——manifest legends 增补 schema 行话，publish_or_upgrade :upgraded 实证（relay 契约字节不动）
 
 Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 ```
@@ -1390,39 +1513,41 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 ## V5 — 真浏览器 e2e(每个有意义步骤截图,evidence/kanban-v2/)
 
-### Task 8: 全链 e2e——admin chat 配 3 阶段 schema → 按自定义规则推进/被拒 → 非 admin 改 schema 被拒
+### Task 9: 全链 e2e——install socialware → 建板 → admin chat 配 schema → 规则推进/被拒 → 非 admin 被拒
 
 **Files:**
 - Create: `evidence/kanban-v2/README.md`(截图索引 + 复现步骤)
 - Create: `evidence/kanban-v2/*.png`(agent-browser 截图)
 
 **Interfaces:**
-- Consumes: V1-V4 全部;dev server 端口 10042;admin `admin@ezagent.chat`/`worlddev`。
+- Consumes: V1-V4 全部;dev server 10042;admin `admin@ezagent.chat`/`worlddev`;boot 晚扫描已把升级后的 kanban socialware 发布为当前 revision。
 
 - [ ] **Step 1: 起环境**
 
 ```bash
 docker start ezagent-pg-compat-audit-postgres
 mise exec -- mix ecto.migrate
-mise exec -- mix phx.server   # 后台跑，等 10042 就绪
+mise exec -- mix phx.server   # 后台，等 10042 就绪(boot 晚扫描发布 kanban socialware)
 ```
 
-- [ ] **Step 2: 准备非 admin 用户**(admin 登录 world → 建普通用户 `viewer@ezagent.chat`,grant 基础 kanban action caps——`add_node`/`set_stage`/`get_tree` 等,**不 grant `set_board_schema`**;沿用 `mix ezagent.agent.grant_recipe_caps` 或 world grant 面的既有做法)
+- [ ] **Step 2: 准备非 admin 用户**(admin 建普通用户 `viewer@ezagent.chat`,grant 基础 kanban action caps——`add_node`/`set_stage`/`get_tree` 等,**不 grant `set_board_schema`**;沿用既有 grant 面做法)
 
-- [ ] **Step 3: 用 agent-browser 走完整剧本,逐步截图**(规矩:每个有意义步骤都截,配置→chat→操作→结果,非只最终)
+- [ ] **Step 3: agent-browser 走完整剧本,逐步截图**(规矩:每个有意义步骤都截,配置→chat→操作→结果,非只最终)
 
 | # | 步骤 | 截图 | 断言 |
 |---|---|---|---|
-| 1 | admin 登录 → `/plugins/kanban` 建板 `v2-demo` | `01-board-created.png` | 板出现,默认 9 棒列头 |
-| 2 | chat 跟看板助手说"改成 3 阶段:想法/开发/上线,进上线要先认领+挂 1 个产物" | `02-assistant-translates.png` | 助手回贴 schema JSON + `/kanban schema apply` 命令 |
-| 3 | admin 发送 apply 命令 | `03-schema-applied.png` | 状态 ok,板列头变 3 阶段 |
-| 4 | 建根卡+子卡,推进 想法→开发 | `04-advance-ok.png` | 推进成功 |
-| 5 | 未认领直接推 开发→上线 | `05-entry-rule-rejected.png` | 人话错误文案(require:owner_claimed) |
-| 6 | 认领 + 挂 1 个产物 → 再推 上线 | `06-advance-after-rules.png` | 推进成功 |
-| 7 | 登出 → viewer 登录,发一模一样的 apply 命令 | `07-non-admin-rejected.png` | `unauthorized` 人话文案,schema 未变 |
-| 8 | viewer 的 get_tree 视图 | `08-viewer-sees-custom-stages.png` | 自定义 3 阶段正常渲染(读不受限) |
+| 1 | admin 登录 → socialware 发现面看到 `kanban`(升级后 revision) | `01-socialware-discover.png` | 描述/行话为 v2 版 |
+| 2 | install kanban socialware 建 session(assistant+dev 物化,#1209 凭证继承零手动) | `02-session-installed.png` | 两成员在位,legends 行话含 schema 段 |
+| 3 | world `/plugins/kanban` 建板 `v2-demo`(grant-at-create 铸 schema cap) | `03-board-created.png` | 板出现,默认 9 棒列头 |
+| 4 | chat 跟看板助手说"改成 3 阶段:想法/开发/上线,进上线要先认领+挂 1 个产物" | `04-assistant-translates.png` | 助手回贴 schema JSON + apply 命令,声明自己不能代发 |
+| 5 | admin 发送 apply 命令 | `05-schema-applied.png` | 状态 ok,板列头变 3 阶段 |
+| 6 | 建根卡+子卡,推进 想法→开发 | `06-advance-ok.png` | 推进成功 |
+| 7 | 未认领直接推 开发→上线 | `07-entry-rule-rejected.png` | 人话错误文案(require:owner_claimed) |
+| 8 | 认领 + 挂 1 个产物 → 再推 上线 | `08-advance-after-rules.png` | 推进成功 |
+| 9 | 登出 → viewer 登录,发一模一样的 apply 命令 | `09-non-admin-rejected.png` | `unauthorized` 人话文案,schema 未变 |
+| 10 | viewer 的看板视图 | `10-viewer-sees-custom-stages.png` | 自定义 3 阶段正常渲染(读不受限) |
 
-- [ ] **Step 4: 写 evidence/kanban-v2/README.md**(表格同上 + 环境信息 + 复现命令;截图文件一并提交)
+- [ ] **Step 4: 写 evidence/kanban-v2/README.md**(表格同上 + 环境信息 + 复现命令;截图一并提交)
 
 - [ ] **Step 5: 收口全量回归 + commit**
 
@@ -1430,9 +1555,10 @@ mise exec -- mix phx.server   # 后台跑，等 10042 就绪
 mise exec -- mix test apps/ezagent_plugin_kanban/test
 mise exec -- mix test apps/ezagent_plugin_world/test
 mise exec -- mix format --check-formatted
-mise exec -- mix ezagent.arch.scan   # set_effect_sites 等 gate 不回归
+mise exec -- mix ezagent.arch.scan          # set_effect_sites 等 gate 不回归
+mise exec -- mix ezagent.socialware.check   # conformance 13/13
 git add evidence/kanban-v2
-git commit -m "test(kanban): V5 真浏览器 e2e——admin chat 配 3 阶段 schema/规则推进被拒/非 admin 被 CapBAC 拒（8 截图）
+git commit -m "test(kanban): V5 真浏览器 e2e——install socialware/chat 配 schema/规则推进被拒/非 admin 被 CapBAC 拒（10 截图）
 
 Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 ```
@@ -1441,6 +1567,8 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 ## Self-Review 记录
 
-- **Spec coverage**:spec §2 现状(V2/V3 换接与排除覆盖)、§3 数据模型(Task 1/2/5)、§4 配置面 c(Task 6 硬门 + Task 7 两段式)、§5 引擎(Task 3/4)、§6 兼容(Task 4 存量断言零修改、Task 5 import 保留、Task 7 skill/前端)、§8 验收(V5)。§7 discuss-first 不排任务(等 Allen)。
-- **Placeholder 扫描**:Task 5 Step 1 的 `seeded/0`、Task 6 Step 1 的 setup 夹具、Task 7 Step 3 的 chat 输入接线三处刻意"以现有文件既有用法为准"——不是占位,是防止照抄过时的 helper 名;断言与语义已完整给出。
-- **类型一致性**:`BoardSchema.normalize/1` 返回 `{:ok, schema}`(Task 1)→ `Shared.schema/1`(Task 2)→ `SchemaRules.check_set_stage/4` 收 schema(Task 3)→ handler(Task 4/5)→ `SchemaCap`/world 事件(Task 6/7)名称已对齐;错误 shape 三方(引擎/前端文案/skill 协议)一致。
+- **Spec coverage**:spec §2 现状(V2/V3 换接与排除)、§3 数据模型(Task 1/2/5,G4 对齐)、§4 配置面 c(Task 6 硬门 + Task 7 两段式 + Task 5 三 recipe 排除)、§5 引擎(Task 3/4)、§6 socialware 升级(Task 8:manifest legends + :upgraded 实证 + 已装语义说明)、§7 兼容(Task 4 存量断言零修改、Task 5 import 保留、Task 7 skill/前端)、§9 验收(V5)。§8 discuss-first 不排任务(等 Allen)。
+- **基线依赖**:Global Constraints 前置核实 + Task 8 Step 0 是仅有的两处"以 #1190/#1218 合并形态为准"——不是占位,是防照抄未合并分支的过时形态;断言语义(三态/legends 判据/relay 红线)已完整给出。
+- **Placeholder 扫描**:Task 5 Step 1 `seeded/0`、Task 6 Step 1 setup 夹具、Task 7 Step 3 chat 接线、Task 8 Step 1 夹具四处"以现有文件既有用法为准"——同上,防 helper 名漂移;断言与语义完整。
+- **类型一致性**:`BoardSchema.normalize/1` `{:ok, schema}`(Task 1)→ `Shared.schema/1`(Task 2)→ `SchemaRules.check_set_stage/4`(Task 3)→ handler(Task 4/5)→ `SchemaCap`/world 事件(Task 6/7)→ manifest 层零代码依赖(Task 8);错误 shape 三方(引擎/前端/skill)一致。
+- **G4 一致性**:default `root_stage: :any`(Task 1)↔ 引擎 root 分支(Task 3)↔ 存量 G4 断言零修改(Task 4)↔ `:first` 为显式收紧选项——四处同源于 v1 `stage_fits?`(kanban.ex:419-437)现行为。
